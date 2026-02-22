@@ -42,25 +42,37 @@ hypot_done:
     ret
 
 .global vector_inv_sqrt
-// void vector_inv_sqrt(float* in, float* out, int n)
 vector_inv_sqrt:
     cbz x2, rsqrt_done
 rsqrt_loop:
-    cmp x2, #4
+    cmp x2, #8
     b.lt rsqrt_tail
     
-    ld1 {v0.4s}, [x0], #16
+    // Загружаем 8 чисел (два регистра по 4 float)
+    ld1 {v0.4s, v1.4s}, [x0], #32
     
-    // 1. Получаем ПРИБЛИЗИТЕЛЬНОЕ значение 1/sqrt(x)
-    frsqrte v1.4s, v0.4s      
+    // ПРИБЛИЖЕНИЕ
+    frsqrte v2.4s, v0.4s
+    frsqrte v3.4s, v1.4s
     
-    // 2. Один шаг уточнения Ньютона-Рафсона для точности
-    fmul v2.4s, v1.4s, v1.4s    // v1*v1
-    frsqrts v2.4s, v0.4s, v2.4s // (3 - x*v1*v1) / 2
-    fmul v1.4s, v1.4s, v2.4s    // v1 * шаг уточнения
+    // ШАГ 1 Уточнения (для обоих регистров)
+    fmul v4.4s, v2.4s, v2.4s
+    fmul v5.4s, v3.4s, v3.4s
+    frsqrts v4.4s, v0.4s, v4.4s
+    frsqrts v5.4s, v1.4s, v5.4s
+    fmul v2.4s, v2.4s, v4.4s
+    fmul v3.4s, v3.4s, v5.4s
+
+    // ШАГ 2 Уточнения (для идеальной точности 10^-12)
+    fmul v4.4s, v2.4s, v2.4s
+    fmul v5.4s, v3.4s, v3.4s
+    frsqrts v4.4s, v0.4s, v4.4s
+    frsqrts v5.4s, v1.4s, v5.4s
+    fmul v2.4s, v2.4s, v4.4s
+    fmul v3.4s, v3.4s, v5.4s
     
-    st1 {v1.4s}, [x1], #16
-    sub x2, x2, #4
+    st1 {v2.4s, v3.4s}, [x1], #32
+    sub x2, x2, #8
     b rsqrt_loop
 
 rsqrt_tail:
