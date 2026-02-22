@@ -2,6 +2,7 @@ import mathS
 import array
 import time
 import math
+import numpy as np
 
 print("\n--- Тест Hypot ---")
 
@@ -117,3 +118,18 @@ print(f"mathS (dot):     {time_asm:.5f}s")
 
 print(f"Ускорение: {time_py / time_asm:.2f}x")
 print(f"Результаты: Py={res_py:.2f}, ASM={res_asm:.2f}")
+
+M, N, K = 200, 200, 200
+A = array.array('f', [1.0] * (M * K))
+B = array.array('f', [2.0] * (K * N))
+C = array.array('f', [0.0] * (M * N))
+
+# Python-реализация (в лоб)
+start = time.perf_counter()
+# Даже не будем пробовать чистый Python на 8 млн итераций, 
+# это займет вечность. Сравним с нашим ASM.
+mathS.matrix_mul(A, B, C, M, N, K)
+asm_time = time.perf_counter() - start
+
+print(f"mathS Matrix Mul ({M}x{N}x{K}): {asm_time:.5f}s")
+print(f"Result Check [0]: {C[0]} (Expected {K * 1.0 * 2.0})")
