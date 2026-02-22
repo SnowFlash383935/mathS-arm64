@@ -13,9 +13,16 @@ jobs:
 
       - name: Install Cross-Toolchain
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu python3-dev libpython3-dev-arm64-cross qemu-user
-
+          # Устанавливаем кросс-компилятор и заголовки Python для arm64
+          sudo apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libc6-dev-arm64-cross \
+            libpython3.12-dev:arm64 \
+            qemu-user
+            
       - name: Build Module
         # Нам нужно найти путь к python-headers для ARM64
         run: make PY_INC=/usr/include/python3.12
