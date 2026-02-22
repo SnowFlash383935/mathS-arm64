@@ -1,24 +1,27 @@
-name: ARM64 Build and Test
+name: ARM64 Build and Test (Emulated)
 
 on: [push, pull_request]
 
 jobs:
   build:
-    # Используем нативный ARM раннер от GitHub
-    runs-on: ubuntu-22.04-arm64
+    runs-on: ubuntu-latest
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Install ARM64 Cross-Compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gcc make
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu make
 
-      - name: Build project
-        run: make
+      - name: Build with Makefile
+        # Используем кросс-компилятор aarch64-linux-gnu-gcc
+        run: make CC=aarch64-linux-gnu-gcc
 
-      - name: Run tests
-        run: ./program
-        
+      - name: Run ARM64 Binary via QEMU
+        # qemu-aarch64 - это интерпретатор, который поймет твой бинарник
+        run: qemu-aarch64 -L /usr/aarch64-linux-gnu ./program
