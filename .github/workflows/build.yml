@@ -38,6 +38,9 @@ jobs:
 
       - name: Run Python Test
         run: |
+          # Убедимся, что у нас есть ARM64 интерпретатор
+          apt-get install -y python3:arm64
+          
           export PYTHONPATH=.
-          # В Debian qemu-aarch64 обычно в /usr/bin/
-          qemu-aarch64 -L /usr/aarch64-linux-gnu /usr/bin/python3 test_python.py
+          # Теперь запускаем ARM-версию питона через QEMU
+          qemu-aarch64 -L /usr/aarch64-linux-gnu /usr/bin/aarch64-linux-gnu-python3.11 test_python.py
