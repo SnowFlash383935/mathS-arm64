@@ -122,3 +122,41 @@ sig_loop:
 
 sig_done:
     ret
+
+.global vector_dot
+// float vector_dot(float* a, float* b, int n)
+// x0 - массив A, x1 - массив B, x2 - длина n
+vector_dot:
+    eor v0.16b, v0.16b, v0.16b   // Обнуляем сумматор (v0)
+    cbz x2, dot_done
+
+dot_loop:
+    cmp x2, #4
+    b.lt dot_tail
+
+    ld1 {v1.4s}, [x0], #16      // Загружаем 4 float из A
+    ld1 {v2.4s}, [x1], #16      // Загружаем 4 float из B
+    
+    // v0 = v0 + (v1 * v2) - главная рабочая лошадка AI
+    fmla v0.4s, v1.4s, v2.4s    
+    
+    sub x2, x2, #4
+    b dot_loop
+
+dot_tail:
+    // Обработка остатка
+    cbz x2, dot_reduce
+    ldr s1, [x0], #4
+    ldr s2, [x1], #4
+    fmadd s0, s1, s2, s0        // Скалярный Multiply-Add
+    sub x2, x2, #1
+    b dot_tail
+
+dot_reduce:
+    // Складываем 4 части вектора v0 между собой: [a+b+c+d]
+    faddp v0.4s, v0.4s, v0.4s   // Панорамное сложение (a+b, c+d, ...)
+    faddp v0.4s, v0.4s, v0.4s   // Финальное сложение
+    // Результат теперь в s0
+
+dot_done:
+    ret
