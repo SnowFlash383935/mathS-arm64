@@ -1,35 +1,19 @@
-name: Python-to-ARM64 (The Final Stand)
+name: Python-to-ARM64 (M1)
 
 on: [push]
 
 jobs:
-  build-and-test:
-    runs-on: ubuntu-latest
+  test-mac:
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Run everything in Docker
+      - name: Build and Test on M1
         run: |
-          docker run --rm -v ${{ github.workspace }}:/ws -w /ws debian:bookworm-slim sh -c "
-            set -e
-            dpkg --add-architecture arm64
-            apt-get update
-            
-            # Ставим компиляторы и библиотеки (библиотеки не конфликтуют)
-            apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-              libpython3-dev:arm64 make
-            
-            # Ставим конкретную версию интерпретатора вместо мета-пакета
-            # Это избежит конфликта с предустановленным python3 (amd64)
-            apt-get install -y python3.11:arm64
-            
-            # Сборка
-            make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.11
-            
-            # Тест (вызываем именно версию 3.11)
-            export PYTHONPATH=.
-            python3.11 test_python.py
-          "
+          # Используем системный компилятор
+          clang -I$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))") -fPIC -c fast_module.c -o fast_module.o
+          clang -c lib.S -o lib.o
+          clang -shared fast_module.o lib.o -o mathS.so
+          
+          export PYTHONPATH=.
+          python3 test_python.py
+          
