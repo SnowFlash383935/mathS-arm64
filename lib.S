@@ -126,7 +126,7 @@ sig_done:
 .global vector_dot
 // double vector_dot(float* a, float* b, int n)
 vector_dot:
-    eor v0.16b, v0.16b, v0.16b   // Сумматор double (v0.2d)
+    eor v0.16b, v0.16b, v0.16b   // Сумматор v0.2d (два double, оба 0.0)
     cbz x2, dot_done
 
 dot_loop:
@@ -136,33 +136,33 @@ dot_loop:
     ld1 {v1.4s}, [x0], #16      // Загружаем 4 float
     ld1 {v2.4s}, [x1], #16
     
-    // Перемножаем 4 float -> получаем 4 float
+    // Перемножаем 4 float -> получаем 4 float в v3
     fmul v3.4s, v1.4s, v2.4s
     
-    // Конвертируем нижние 2 float в 2 double и прибавляем к сумме
+    // 1. Нижние два float в два double
     fcvtl v4.2d, v3.2s
-    fadd v0.2d, v0.2d, v4.4s
+    fadd v0.2d, v0.2d, v4.2d     // Складываем double с double
     
-    // Конвертируем верхние 2 float в 2 double и прибавляем
+    // 2. Верхние два float в два double
     fcvtl2 v5.2d, v3.4s
-    fadd v0.2d, v0.2d, v5.2d
+    fadd v0.2d, v0.2d, v5.2d     // Складываем double с double
     
     sub x2, x2, #4
     b dot_loop
 
 dot_tail:
-    // Хвост считаем в double для честности
     cbz x2, dot_reduce
     ldr s1, [x0], #4
     ldr s2, [x1], #4
     fmul s1, s1, s2
-    fcvt d1, s1                // float -> double
+    fcvt d1, s1                // Конвертируем остаток в double
     fadd d0, d0, d1
     sub x2, x2, #1
     b dot_tail
 
 dot_reduce:
-    faddp d0, v0.2d             // Складываем две половинки double
+    faddp d0, v0.2d             // Схлопываем [d0, d1] в одно d0
 dot_done:
     ret
+
 
