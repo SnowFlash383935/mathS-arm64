@@ -56,14 +56,14 @@ static PyObject* method_vector_sigmoid(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
-extern float vector_dot(float* a, float* b, int n);
+extern double vector_dot(float* a, float* b, int n);
 
 static PyObject* method_vector_dot(PyObject* self, PyObject* args) {
     Py_buffer a_view, b_view;
     if (!PyArg_ParseTuple(args, "y*y*", &a_view, &b_view)) return NULL;
 
     int n = a_view.len / sizeof(float);
-    float result = vector_dot((float*)a_view.buf, (float*)b_view.buf, n);
+    double result = vector_dot((float*)a_view.buf, (float*)b_view.buf, n);
 
     PyBuffer_Release(&a_view);
     PyBuffer_Release(&b_view);
