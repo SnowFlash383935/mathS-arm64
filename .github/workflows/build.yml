@@ -13,15 +13,25 @@ jobs:
 
       - name: Install Cross-Toolchain
         run: |
+          # 1. Добавляем архитектуру
           sudo dpkg --add-architecture arm64
+
+          # 2. Переписываем sources.list, чтобы разделить x86_64 и arm64
+          # Это магия sed, которая говорит: за Intel иди на archive, за ARM на ports
+          sudo sed -i "s/deb http/deb [arch=amd64] http/g" /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted" | sudo tee -a /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted" | sudo tee -a /etc/apt/sources.list
+
+          # 3. Обновляемся и ставим зависимости
           sudo apt-get update
-          # Устанавливаем кросс-компилятор и заголовки Python для arm64
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
             libpython3.12-dev:arm64 \
             qemu-user
+
             
       - name: Build Module
         # Нам нужно найти путь к python-headers для ARM64
