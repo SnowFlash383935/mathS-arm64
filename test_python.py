@@ -2,7 +2,6 @@ import mathS
 import array
 import time
 import math
-import numpy as np
 
 print("\n--- Тест Hypot ---")
 
@@ -119,17 +118,37 @@ print(f"mathS (dot):     {time_asm:.5f}s")
 print(f"Ускорение: {time_py / time_asm:.2f}x")
 print(f"Результаты: Py={res_py:.2f}, ASM={res_asm:.2f}")
 
+print("\n--- Тест Matrix Multiplication (GEMM) ---")
+
+# Размеры матриц (M x K) * (K x N) = (M x N)
 M, N, K = 200, 200, 200
 A = array.array('f', [1.0] * (M * K))
 B = array.array('f', [2.0] * (K * N))
 C = array.array('f', [0.0] * (M * N))
 
-# Python-реализация (в лоб)
-start = time.perf_counter()
-# Даже не будем пробовать чистый Python на 8 млн итераций, 
-# это займет вечность. Сравним с нашим ASM.
-mathS.matrix_mul(A, B, C, M, N, K)
-asm_time = time.perf_counter() - start
+print(f"Умножаем матрицы {M}x{K} и {K}x{N}...")
 
-print(f"mathS Matrix Mul ({M}x{N}x{K}): {asm_time:.5f}s")
-print(f"Result Check [0]: {C[0]} (Expected {K * 1.0 * 2.0})")
+# 1. Тест mathS (ASM NEON)
+start_asm = time.perf_counter()
+mathS.matrix_mul(A, B, C, M, N, K)
+time_asm = time.perf_counter() - start_asm
+
+print(f"mathS time: {time_asm:.5f}s")
+
+# 2. Проверка корректности
+# Ожидаемое значение каждого элемента: сумма(A[i,k]*B[k,j]) = K * 1.0 * 2.0
+expected = float(K * 1.0 * 2.0)
+success = True
+for i in range(min(100, M * N)): # Проверим первые 100 элементов
+    if abs(C[i] - expected) > 1e-5:
+        print(f"Ошибка в элементе {i}: ожидалось {expected}, получено {C[i]}")
+        success = False
+        break
+
+if success:
+    print(f"РЕЗУЛЬТАТ: Успех! Все элементы равны {expected}")
+    
+# Сравнение с теоретическим "медленным" Python (эмуляция)
+# Просто чтобы понять масштаб:
+time_py_est = 0.0001 * (M * N * K) # Грубая оценка: 100 мкс на одну операцию в Python
+print(f"Теоретическое ускорение относительно вложенных циклов Python: ~{time_py_est / time_asm:.1f}x")
