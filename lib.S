@@ -88,3 +88,37 @@ rsqrt_tail:
 
 rsqrt_done:
     ret
+
+.global vector_sigmoid
+// void vector_sigmoid(float* in, float* out, int n)
+vector_sigmoid:
+    // Подготовка констант (0.5, 1.0)
+    fmov v4.4s, #0.5
+    fmov v5.4s, #1.0
+
+sig_loop:
+    cmp x2, #4
+    b.lt sig_done
+    
+    ld1 {v0.4s}, [x0], #16
+    
+    // 1. Абсолютное значение |x|
+    fabs v1.4s, v0.4s
+    
+    // 2. Знаменатель (1 + |x|)
+    fadd v2.4s, v1.4s, v5.4s
+    
+    // 3. Быстрое деление (через наш inv_sqrt, но для 1/x есть frsqrte)
+    // Для простоты используем обычное деление fdiv, оно медленнее, но точнее
+    fdiv v3.4s, v0.4s, v2.4s
+    
+    // 4. v3 = (x / (1+|x|)) * 0.5 + 0.5
+    fmul v3.4s, v3.4s, v4.4s
+    fadd v3.4s, v3.4s, v4.4s
+    
+    st1 {v3.4s}, [x1], #16
+    sub x2, x2, #4
+    b sig_loop
+
+sig_done:
+    ret
