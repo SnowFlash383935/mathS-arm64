@@ -12,25 +12,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Setup QEMU Static
+        # Этот экшн регистрирует QEMU в ядре хоста, чтобы Docker понимал ARM-файлы
+        uses: docker/setup-qemu-action@v3
+
       - name: Setup Multiarch and Install Deps
         run: |
           apt-get update
-          apt-get install -y dpkg curl lsb-release
+          apt-get install -y dpkg curl lsb-release qemu-user-static
           
-          # Добавляем ARM64
           dpkg --add-architecture arm64
-          
-          # В Debian порты лежат там же, где и основной дистрибутив, 
-          # либо в официальном зеркале deb.debian.org. Это всё упрощает!
           apt-get update
+          
+          # Теперь, благодаря qemu-user-static, установка пакетов :arm64 пройдет гладко
           apt-get install -y \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
             libpython3-dev:arm64 \
-            python3 \
-            qemu-user \
-            make \
-            python3-dev
+            python3-dev \
+            python3:arm64 \
+            make
 
       - name: Build Module
         # Проверяем версию python в Debian Bookworm (обычно 3.11)
