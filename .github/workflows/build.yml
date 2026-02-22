@@ -25,4 +25,4 @@ jobs:
       - name: Run ARM64 Binary via QEMU
         # qemu-aarch64 - это эмулятор, который запустит ARM-бинарник на Intel
         # -L /usr/aarch64-linux-gnu нужен, чтобы найти ARM-версии libc
-        run: qemu-aarch64 -L /usr/aarch64-linux-gnu ./program
+        run: qemu-aarch64 -L /usr/aarch64-linux-gnu ./hello_pure
