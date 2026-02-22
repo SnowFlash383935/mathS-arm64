@@ -15,18 +15,21 @@ jobs:
         run: |
           docker run --rm -v ${{ github.workspace }}:/ws -w /ws debian:bookworm-slim sh -c "
             set -e
-            # 1. Настройка архитектур
             dpkg --add-architecture arm64
             apt-get update
             
-            # 2. Установка только нужного (Debian не упадет с 404)
+            # Ставим компиляторы и библиотеки (библиотеки не конфликтуют)
             apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-              libpython3-dev:arm64 python3-dev python3:arm64 make
+              libpython3-dev:arm64 make
             
-            # 3. Сборка (в Debian Bookworm Python 3.11)
+            # Ставим конкретную версию интерпретатора вместо мета-пакета
+            # Это избежит конфликта с предустановленным python3 (amd64)
+            apt-get install -y python3.11:arm64
+            
+            # Сборка
             make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.11
             
-            # 4. Тест
+            # Тест (вызываем именно версию 3.11)
             export PYTHONPATH=.
             python3.11 test_python.py
           "
