@@ -124,39 +124,45 @@ sig_done:
     ret
 
 .global vector_dot
-// float vector_dot(float* a, float* b, int n)
-// x0 - массив A, x1 - массив B, x2 - длина n
+// double vector_dot(float* a, float* b, int n)
 vector_dot:
-    eor v0.16b, v0.16b, v0.16b   // Обнуляем сумматор (v0)
+    eor v0.16b, v0.16b, v0.16b   // Сумматор double (v0.2d)
     cbz x2, dot_done
 
 dot_loop:
     cmp x2, #4
     b.lt dot_tail
 
-    ld1 {v1.4s}, [x0], #16      // Загружаем 4 float из A
-    ld1 {v2.4s}, [x1], #16      // Загружаем 4 float из B
+    ld1 {v1.4s}, [x0], #16      // Загружаем 4 float
+    ld1 {v2.4s}, [x1], #16
     
-    // v0 = v0 + (v1 * v2) - главная рабочая лошадка AI
-    fmla v0.4s, v1.4s, v2.4s    
+    // Перемножаем 4 float -> получаем 4 float
+    fmul v3.4s, v1.4s, v2.4s
+    
+    // Конвертируем нижние 2 float в 2 double и прибавляем к сумме
+    fcvtl v4.2d, v3.2s
+    fadd v0.2d, v0.2d, v4.4s
+    
+    // Конвертируем верхние 2 float в 2 double и прибавляем
+    fcvtl2 v5.2d, v3.4s
+    fadd v0.2d, v0.2d, v5.2d
     
     sub x2, x2, #4
     b dot_loop
 
 dot_tail:
-    // Обработка остатка
+    // Хвост считаем в double для честности
     cbz x2, dot_reduce
     ldr s1, [x0], #4
     ldr s2, [x1], #4
-    fmadd s0, s1, s2, s0        // Скалярный Multiply-Add
+    fmul s1, s1, s2
+    fcvt d1, s1                // float -> double
+    fadd d0, d0, d1
     sub x2, x2, #1
     b dot_tail
 
 dot_reduce:
-    // Складываем 4 части вектора v0 между собой: [a+b+c+d]
-    faddp v0.4s, v0.4s, v0.4s   // Панорамное сложение (a+b, c+d, ...)
-    faddp v0.4s, v0.4s, v0.4s   // Финальное сложение
-    // Результат теперь в s0
-
+    faddp d0, v0.2d             // Складываем две половинки double
 dot_done:
     ret
+
