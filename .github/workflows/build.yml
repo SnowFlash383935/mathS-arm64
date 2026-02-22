@@ -1,43 +1,37 @@
-name: Python-to-ARM64 Bridge
+name: Python-to-ARM64 Bridge (Docker)
 
 on: [push]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    # Используем Docker-контейнер, в котором мы хозяева
+    container:
+      image: ubuntu:24.04
+      options: --user root
+
     steps:
       - uses: actions/checkout@v4
       
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Fix Multiarch Repositories
+      - name: Setup Environment
         run: |
-          sudo dpkg --add-architecture arm64
+          apt-get update
+          apt-get install -y software-properties-common
+          dpkg --add-architecture arm64
           
-          # Создаем чистый конфиг: Intel (amd64) идет на archive/security
-          sudo tee /etc/apt/sources.list <<EOF
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs) main restricted universe
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-updates main restricted universe
-          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-backports main restricted universe
-          deb [arch=amd64] http://security.ubuntu.com/ubuntu/ $(lsb_release -cs)-security main restricted universe
-          
-          # ARM (arm64) идет только на ports
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs) main restricted universe
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-updates main restricted universe
-          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-security main restricted universe
-          EOF
+          # Вместо правки основного файла, создаем специфичные листы
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe" > /etc/apt/sources.list.d/arm64.list
+          # Ограничиваем основной лист только amd64
+          sed -i 's/deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
 
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libpython3.12-dev:arm64 qemu-user
-            
+          apt-get update
+          apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            libpython3.12-dev:arm64 qemu-user make python3 python3-pip
+
       - name: Build Module
-        # Нам нужно найти путь к python-headers для ARM64
-        run: make PY_INC=/usr/include/python3.12
+        run: make CC=aarch64-linux-gnu-gcc
 
-      - name: Run Python Test via QEMU
+      - name: Run Python Test
         run: |
-          # Указываем QEMU, где искать библиотеки и сам python
-          export QEMU_LD_PREFIX=/usr/aarch64-linux-gnu
           export PYTHONPATH=.
-          qemu-aarch64 -L $QEMU_LD_PREFIX /usr/bin/python3 test_python.py
+          qemu-aarch64 -L /usr/aarch64-linux-gnu /usr/bin/python3 test_python.py
