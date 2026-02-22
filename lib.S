@@ -40,3 +40,39 @@ hypot_tail:
 
 hypot_done:
     ret
+
+.global vector_inv_sqrt
+// void vector_inv_sqrt(float* in, float* out, int n)
+vector_inv_sqrt:
+    cbz x2, rsqrt_done
+rsqrt_loop:
+    cmp x2, #4
+    b.lt rsqrt_tail
+    
+    ld1 {v0.4s}, [x0], #16
+    
+    // 1. Получаем ПРИБЛИЗИТЕЛЬНОЕ значение 1/sqrt(x)
+    frsqrte v1.4s, v0.4s      
+    
+    // 2. Один шаг уточнения Ньютона-Рафсона для точности
+    fmul v2.4s, v1.4s, v1.4s    // v1*v1
+    frsqrts v2.4s, v0.4s, v2.4s // (3 - x*v1*v1) / 2
+    fmul v1.4s, v1.4s, v2.4s    // v1 * шаг уточнения
+    
+    st1 {v1.4s}, [x1], #16
+    sub x2, x2, #4
+    b rsqrt_loop
+
+rsqrt_tail:
+    cbz x2, rsqrt_done
+    ldr s0, [x0], #4
+    frsqrte s1, s0
+    fmul s2, s1, s1
+    frsqrts s2, s0, s2
+    fmul s1, s1, s2
+    str s1, [x1], #4
+    sub x2, x2, #1
+    b rsqrt_tail
+
+rsqrt_done:
+    ret
