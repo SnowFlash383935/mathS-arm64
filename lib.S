@@ -1,39 +1,19 @@
-.text
-.global asm_strlen, asm_reverse
+.section .data
+    msg:    .ascii "Hello from pure ARM64 Syscall!\n"
+    len = . - msg
 
-asm_strlen:
-    mov x1, x0          // Копируем адрес начала строки
-    mov x0, #0          // Обнуляем счетчик
-loop:
-    ldrb w2, [x1], #1   // Читаем байт с автоинкрементом
-    cbz w2, done        // Если 0 — выходим
-    add x0, x0, #1      // x0++
-    b loop
-done:
-    ret
-asm_reverse:
-    // x0 - адрес строки
-    stp x29, x30, [sp, #-16]! // Сохраняем стек, т.к. будем вызывать strlen
-    mov x19, x0               // Сохраняем начало строки в x19
-    
-    bl asm_strlen             // Вызываем твою же функцию, длина в x0
-    
-    add x1, x19, x0           // x1 = начало + длина
-    sub x1, x1, #1            // x1 указывает на последний символ (перед \0)
-    mov x0, x19               // x0 снова указывает на начало
+.section .text
+.global _start
 
-reverse_loop:
-    cmp x0, x1
-    b.ge reverse_done         // Если указатели встретились или пересеклись — конец
-    
-    ldrb w2, [x0]             // Берем символ слева
-    ldrb w3, [x1]             // Берем символ справа
-    
-    strb w3, [x0], #1         // Пишем правый налево и двигаем левый указатель
-    strb w2, [x1], #-1        // Пишем левый направо и двигаем правый назад
-    
-    b reverse_loop
+_start:
+    // Системный вызов write(1, msg, len)
+    mov x0, #1      // stdout
+    adr x1, msg     // адрес строки
+    mov x2, len     // длина
+    mov x8, #64     // номер syscall write для ARM64
+    svc #0          // Прыжок в ядро!
 
-reverse_done:
-    ldp x29, x30, [sp], #16
-    ret
+    // Системный вызов exit(0)
+    mov x0, #0      // код возврата
+    mov x8, #93     // номер syscall exit для ARM64
+    svc #0
