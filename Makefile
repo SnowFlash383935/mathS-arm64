@@ -1,16 +1,6 @@
-# По умолчанию используем системный gcc
-CC = gcc
+AS = aarch64-linux-gnu-as
+LD = aarch64-linux-gnu-ld
 
-all: program
-
-program: main.o lib.o
-	$(CC) main.o lib.o -o program
-
-main.o: main.c
-	$(CC) -c main.c -o main.o
-
-lib.o: lib.S
-	$(CC) -c lib.S -o lib.o
-
-clean:
-	rm -f *.o program
+all:
+	$(AS) hello.S -o hello.o
+	$(LD) hello.o -o hello_pure
