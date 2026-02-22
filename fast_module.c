@@ -71,10 +71,28 @@ static PyObject* method_vector_dot(PyObject* self, PyObject* args) {
     return PyFloat_FromDouble((double)result);
 }
 
+extern void matrix_mul(float* A, float* B, float* C, int M, int N, int K);
+
+static PyObject* method_matrix_mul(PyObject* self, PyObject* args) {
+    Py_buffer a_v, b_v, c_v;
+    int M, N, K;
+
+    if (!PyArg_ParseTuple(args, "y*y*y*iii", &a_v, &b_v, &c_v, &M, &N, &K))
+        return NULL;
+
+    matrix_mul((float*)a_v.buf, (float*)b_v.buf, (float*)c_v.buf, M, N, K);
+
+    PyBuffer_Release(&a_v);
+    PyBuffer_Release(&b_v);
+    PyBuffer_Release(&c_v);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
     {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
+    {"matrix_mul", method_matrix_mul, METH_VARARGS, "Matrix Multiplication"},
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
