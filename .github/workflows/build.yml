@@ -1,38 +1,32 @@
-name: Python-to-ARM64 Bridge (Final Fix)
+name: Python-to-ARM64 (The Final Stand)
 
 on: [push]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    # Убираем 'container:' отсюда, будем запускать его вручную или использовать хост
-    
     steps:
       - uses: actions/checkout@v4
 
-      # 1. Регистрируем QEMU в ядре ХОСТА (ubuntu-latest)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # 2. Запускаем всё внутри контейнера через 'docker run' или просто используем хост
-      # На самом деле, раз мы используем QEMU, нам даже контейнер не обязателен, 
-      # но давай сделаем через чистый скрипт на хосте для скорости:
-      - name: Install and Build
+      - name: Run everything in Docker
         run: |
-          sudo dpkg --add-architecture arm64
-          # Добавляем порты для ARM64
-          sudo sed -i "s/deb http/deb [arch=amd64] http/g" /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe" | sudo tee -a /etc/apt/sources.list
-          
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            libpython3.12-dev:arm64 python3.12-dev python3.12:arm64 qemu-user-static make
-
-      - name: Build
-        run: make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.12
-
-      - name: Run Python Test
-        run: |
-          export PYTHONPATH=.
-          # Теперь это сработает, потому что QEMU зарегистрирован в ядре!
-          qemu-aarch64-static -L /usr/aarch64-linux-gnu /usr/bin/python3.12 test_python.py
+          docker run --rm -v ${{ github.workspace }}:/ws -w /ws debian:bookworm-slim sh -c "
+            set -e
+            # 1. Настройка архитектур
+            dpkg --add-architecture arm64
+            apt-get update
+            
+            # 2. Установка только нужного (Debian не упадет с 404)
+            apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+              libpython3-dev:arm64 python3-dev python3:arm64 make
+            
+            # 3. Сборка (в Debian Bookworm Python 3.11)
+            make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.11
+            
+            # 4. Тест
+            export PYTHONPATH=.
+            python3.11 test_python.py
+          "
