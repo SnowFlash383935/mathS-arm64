@@ -96,3 +96,24 @@ print(f"Результат в x={data_in[mid]:.2f}: Python={data_out_py[mid]:.4f
 # Проверка на краях
 print(f"Результат в x={data_in[0]:.2f}: Python={data_out_py[0]:.4f}, ASM={data_out_asm[0]:.4f}")
 
+print("\n--- Тест Vector Dot Product (Скалярное произведение) ---")
+
+n = 1_000_000
+a = array.array('f', [1.1] * n)
+b = array.array('f', [2.2] * n)
+
+# 1. Тест Python (чистый)
+start_py = time.perf_counter()
+# В Python это обычно делают через zip, что очень медленно
+res_py = sum(ai * bi for ai, bi in zip(a, b))
+time_py = time.perf_counter() - start_py
+print(f"Python sum(zip): {time_py:.5f}s")
+
+# 2. Тест mathS (ASM NEON)
+start_asm = time.perf_counter()
+res_asm = mathS.vector_dot(a, b)
+time_asm = time.perf_counter() - start_asm
+print(f"mathS (dot):     {time_asm:.5f}s")
+
+print(f"Ускорение: {time_py / time_asm:.2f}x")
+print(f"Результаты: Py={res_py:.2f}, ASM={res_asm:.2f}")
