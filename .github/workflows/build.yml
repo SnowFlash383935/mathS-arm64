@@ -1,0 +1,24 @@
+name: ARM64 Build and Test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    # Используем нативный ARM раннер от GitHub
+    runs-on: ubuntu-24.04-arm64
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential gcc make
+
+      - name: Build project
+        run: make
+
+      - name: Run tests
+        run: ./program
+        
