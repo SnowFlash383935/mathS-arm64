@@ -34,9 +34,32 @@ static PyObject* method_vector_inv_sqrt(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+// Объявляем внешнюю функцию из lib.S
+extern void vector_sigmoid(float* in, float* out, int n);
+
+static PyObject* method_vector_sigmoid(PyObject* self, PyObject* args) {
+    Py_buffer in_view, out_view;
+
+    // Парсим два буфера: входной массив и массив для результата
+    if (!PyArg_ParseTuple(args, "y*y*", &in_view, &out_view)) {
+        return NULL;
+    }
+
+    int n = in_view.len / sizeof(float);
+    
+    // Вызываем твой мощный ассемблер
+    vector_sigmoid((float*)in_view.buf, (float*)out_view.buf, n);
+
+    PyBuffer_Release(&in_view);
+    PyBuffer_Release(&out_view);
+    
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
+    {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
 
