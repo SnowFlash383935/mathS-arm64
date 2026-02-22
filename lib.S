@@ -1,41 +1,42 @@
-.global asm_reverse
-asm_reverse:
-    mov x1, x0          // x1 - левый указатель
-    mov x8, x0
-    
-find_null:
-    ldrb w9, [x8], #1
-    cbnz w9, find_null
-    sub x2, x8, #2      // x2 - последний символ
+.global vector_hypot
+// void vector_hypot(float* a, float* b, float* out, int n)
+// x0 - адрес массива A
+// x1 - адрес массива B
+// x2 - адрес выходного массива Out
+// x3 - количество элементов (n)
 
-neon_loop_16:
-    sub x10, x2, x1
-    cmp x10, #31        // Нужно 32 байта разницы для безопасного обмена по 16
-    b.lt tail_byte
+vector_hypot:
+    cbz x3, hypot_done          // Если n == 0, выходим
 
-    ld1 {v0.16b}, [x1]   // Читаем 16 байт слева
-    ld1 {v1.16b}, [x2], #-16 // Сдвигаем x2 назад (временно, потом поправим)
-    // Ошибка была тут, заменим на два шага:
-    ld1 {v1.16b}, [x2]   
-    sub x2, x2, #16      // Теперь x2 указывает на начало следующего блока
+hypot_loop:
+    cmp x3, #4
+    b.lt hypot_tail             // Если осталось меньше 4 элементов, в хвост
 
-    rev64 v0.16b, v0.16b
-    ext v0.16b, v0.16b, v0.16b, #8
-    rev64 v1.16b, v1.16b
-    ext v1.16b, v1.16b, v1.16b, #8
+    // Загружаем по 4 значения float (32-bit) за раз
+    ld1 {v0.4s}, [x0], #16
+    ld1 {v1.4s}, [x1], #16
 
-    st1 {v0.16b}, [x2, #16] // Пишем левый блок на место правого
-    st1 {v1.16b}, [x1], #16  // Пишем правый на место левого
-    b neon_loop_16
+    fmul v0.4s, v0.4s, v0.4s    // a^2
+    fmul v1.4s, v1.4s, v1.4s    // b^2
+    fadd v0.4s, v0.4s, v1.4s    // a^2 + b^2
+    fsqrt v0.4s, v0.4s          // sqrt(a^2 + b^2)
 
-tail_byte:
-    cmp x1, x2
-    b.ge rev_done
-    ldrb w3, [x1]
-    ldrb w4, [x2]
-    strb w3, [x2], #-1
-    strb w4, [x1], #1
-    b tail_byte
+    st1 {v0.4s}, [x2], #16      // Сохраняем результат
+    sub x3, x3, #4
+    b hypot_loop
 
-rev_done:
+hypot_tail:
+    // Хвост для n, не кратных 4
+    cbz x3, hypot_done
+    ldr s0, [x0], #4
+    ldr s1, [x1], #4
+    fmul s0, s0, s0
+    fmul s1, s1, s1
+    fadd s0, s0, s1
+    fsqrt s0, s0
+    str s0, [x2], #4
+    sub x3, x3, #1
+    b hypot_tail
+
+hypot_done:
     ret
