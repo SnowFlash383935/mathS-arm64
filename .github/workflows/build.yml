@@ -1,4 +1,4 @@
-name: ARM64 Build and Test (Emulated)
+name: ARM64 Build and Test (Fixed)
 
 on: [push, pull_request]
 
@@ -16,12 +16,13 @@ jobs:
       - name: Install ARM64 Cross-Compiler
         run: |
           sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu make
+          sudo apt-get install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu make qemu-user
 
-      - name: Build with Makefile
-        # Используем кросс-компилятор aarch64-linux-gnu-gcc
+      - name: Build project
+        # Передаем префикс кросс-компилятора в Makefile
         run: make CC=aarch64-linux-gnu-gcc
 
       - name: Run ARM64 Binary via QEMU
-        # qemu-aarch64 - это интерпретатор, который поймет твой бинарник
+        # qemu-aarch64 - это эмулятор, который запустит ARM-бинарник на Intel
+        # -L /usr/aarch64-linux-gnu нужен, чтобы найти ARM-версии libc
         run: qemu-aarch64 -L /usr/aarch64-linux-gnu ./program
