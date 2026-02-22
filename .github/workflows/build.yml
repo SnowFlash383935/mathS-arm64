@@ -11,27 +11,25 @@ jobs:
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Install Cross-Toolchain
+      - name: Fix Multiarch Repositories
         run: |
-          # 1. Добавляем архитектуру
           sudo dpkg --add-architecture arm64
+          
+          # Создаем чистый конфиг: Intel (amd64) идет на archive/security
+          sudo tee /etc/apt/sources.list <<EOF
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs) main restricted universe
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-updates main restricted universe
+          deb [arch=amd64] http://archive.ubuntu.com/ubuntu/ $(lsb_release -cs)-backports main restricted universe
+          deb [arch=amd64] http://security.ubuntu.com/ubuntu/ $(lsb_release -cs)-security main restricted universe
+          
+          # ARM (arm64) идет только на ports
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs) main restricted universe
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-updates main restricted universe
+          deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ $(lsb_release -cs)-security main restricted universe
+          EOF
 
-          # 2. Переписываем sources.list, чтобы разделить x86_64 и arm64
-          # Это магия sed, которая говорит: за Intel иди на archive, за ARM на ports
-          sudo sed -i "s/deb http/deb [arch=amd64] http/g" /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main restricted" | sudo tee -a /etc/apt/sources.list
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-security main restricted" | sudo tee -a /etc/apt/sources.list
-
-          # 3. Обновляемся и ставим зависимости
           sudo apt-get update
-          sudo apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            libpython3.12-dev:arm64 \
-            qemu-user
-
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libpython3.12-dev:arm64 qemu-user
             
       - name: Build Module
         # Нам нужно найти путь к python-headers для ARM64
