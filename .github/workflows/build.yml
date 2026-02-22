@@ -12,7 +12,7 @@ jobs:
           # Используем системный компилятор
           clang -I$(python3 -c "import sysconfig; print(sysconfig.get_path('include'))") -fPIC -c fast_module.c -o fast_module.o
           clang -c lib.S -o lib.o
-          clang -shared fast_module.o lib.o -o mathS.so
+          clang -shared fast_module.o lib.o -o mathS.so -undefined dynamic_lookup
           
           export PYTHONPATH=.
           python3 test_python.py
