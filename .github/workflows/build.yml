@@ -1,47 +1,38 @@
-name: Python-to-ARM64 Bridge (Debian Edition)
+name: Python-to-ARM64 Bridge (Final Fix)
 
 on: [push]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    container:
-      image: debian:bookworm
-      options: --user root
-
+    # Убираем 'container:' отсюда, будем запускать его вручную или использовать хост
+    
     steps:
       - uses: actions/checkout@v4
-      
-      - name: Setup QEMU Static
-        # Этот экшн регистрирует QEMU в ядре хоста, чтобы Docker понимал ARM-файлы
+
+      # 1. Регистрируем QEMU в ядре ХОСТА (ubuntu-latest)
+      - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      - name: Setup Multiarch and Install Deps
+      # 2. Запускаем всё внутри контейнера через 'docker run' или просто используем хост
+      # На самом деле, раз мы используем QEMU, нам даже контейнер не обязателен, 
+      # но давай сделаем через чистый скрипт на хосте для скорости:
+      - name: Install and Build
         run: |
-          apt-get update
-          apt-get install -y dpkg curl lsb-release qemu-user-static
+          sudo dpkg --add-architecture arm64
+          # Добавляем порты для ARM64
+          sudo sed -i "s/deb http/deb [arch=amd64] http/g" /etc/apt/sources.list
+          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main restricted universe" | sudo tee -a /etc/apt/sources.list
           
-          dpkg --add-architecture arm64
-          apt-get update
-          
-          # Теперь, благодаря qemu-user-static, установка пакетов :arm64 пройдет гладко
-          apt-get install -y \
-            gcc-aarch64-linux-gnu \
-            g++-aarch64-linux-gnu \
-            libpython3-dev:arm64 \
-            python3-dev \
-            python3:arm64 \
-            make
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+            libpython3.12-dev:arm64 python3.12-dev python3.12:arm64 qemu-user-static make
 
-      - name: Build Module
-        # Проверяем версию python в Debian Bookworm (обычно 3.11)
-        run: make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.11
+      - name: Build
+        run: make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.12
 
       - name: Run Python Test
         run: |
-          # Убедимся, что у нас есть ARM64 интерпретатор
-          apt-get install -y python3:arm64
-          
           export PYTHONPATH=.
-          # Теперь запускаем ARM-версию питона через QEMU
-          qemu-aarch64 -L /usr/aarch64-linux-gnu /usr/bin/aarch64-linux-gnu-python3.11 test_python.py
+          # Теперь это сработает, потому что QEMU зарегистрирован в ядре!
+          qemu-aarch64-static -L /usr/aarch64-linux-gnu /usr/bin/python3.12 test_python.py
