@@ -1,37 +1,43 @@
-name: Python-to-ARM64 Bridge (Docker)
+name: Python-to-ARM64 Bridge (Debian Edition)
 
 on: [push]
 
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    # Используем Docker-контейнер, в котором мы хозяева
     container:
-      image: ubuntu:24.04
+      image: debian:bookworm
       options: --user root
 
     steps:
       - uses: actions/checkout@v4
       
-      - name: Setup Environment
+      - name: Setup Multiarch and Install Deps
         run: |
           apt-get update
-          apt-get install -y software-properties-common
+          apt-get install -y dpkg curl lsb-release
+          
+          # Добавляем ARM64
           dpkg --add-architecture arm64
           
-          # Вместо правки основного файла, создаем специфичные листы
-          echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe" > /etc/apt/sources.list.d/arm64.list
-          # Ограничиваем основной лист только amd64
-          sed -i 's/deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
-
+          # В Debian порты лежат там же, где и основной дистрибутив, 
+          # либо в официальном зеркале deb.debian.org. Это всё упрощает!
           apt-get update
-          apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
-            libpython3.12-dev:arm64 qemu-user make python3 python3-pip
+          apt-get install -y \
+            gcc-aarch64-linux-gnu \
+            g++-aarch64-linux-gnu \
+            libpython3-dev:arm64 \
+            python3 \
+            qemu-user \
+            make \
+            python3-dev
 
       - name: Build Module
-        run: make CC=aarch64-linux-gnu-gcc
+        # Проверяем версию python в Debian Bookworm (обычно 3.11)
+        run: make CC=aarch64-linux-gnu-gcc PY_INC=/usr/include/python3.11
 
       - name: Run Python Test
         run: |
           export PYTHONPATH=.
+          # В Debian qemu-aarch64 обычно в /usr/bin/
           qemu-aarch64 -L /usr/aarch64-linux-gnu /usr/bin/python3 test_python.py
