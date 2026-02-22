@@ -56,8 +56,24 @@ static PyObject* method_vector_sigmoid(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+extern float vector_dot(float* a, float* b, int n);
+
+static PyObject* method_vector_dot(PyObject* self, PyObject* args) {
+    Py_buffer a_view, b_view;
+    if (!PyArg_ParseTuple(args, "y*y*", &a_view, &b_view)) return NULL;
+
+    int n = a_view.len / sizeof(float);
+    float result = vector_dot((float*)a_view.buf, (float*)b_view.buf, n);
+
+    PyBuffer_Release(&a_view);
+    PyBuffer_Release(&b_view);
+
+    return PyFloat_FromDouble((double)result);
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
+    {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
