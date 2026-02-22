@@ -165,4 +165,60 @@ dot_reduce:
 dot_done:
     ret
 
+.global matrix_mul
+// void matrix_mul(float* A, float* b, float* C, int M, int N, int K)
+// x0-A, x1-B, x2-C, x3-M, x4-N, x5-K
+matrix_mul:
+    // Мы будем идти по строкам A (i) и столбцам B (j)
+    // Для простоты реализуем базовый алгоритм, но с векторным накоплением
+    
+    mov x6, #0          // i = 0 (строки M)
+row_loop:
+    cmp x6, x3
+    b.ge mat_done
+    
+    mov x7, #0          // j = 0 (столбцы N)
+col_loop:
+    cmp x7, x4
+    b.ge next_row
+    
+    // Вычисляем скалярное произведение строки i и столбца j
+    // Это наш dot_product, но B идет с шагом N (column-wise)
+    // Для реального GEMM матрицы обычно транспонируют или используют блоки
+    // Но мы сделаем хитро: загрузим 4 элемента строки A и 4 элемента столбца B
+    
+    eor v0.16b, v0.16b, v0.16b // Сумматор для C[i,j]
+    mov x8, #0                 // k = 0
+k_loop:
+    cmp x8, x5
+    b.ge store_res
+    
+    // Загружаем элемент A[i,k] и B[k,j]
+    // Внимание: это упрощенная логика для понимания
+    ldr s1, [x0, x8, lsl #2]   // A[i,k]
+    // Для B[k,j] нам нужно смещение (k * N + j)
+    mul x9, x8, x4
+    add x9, x9, x7
+    ldr s2, [x1, x9, lsl #2]   // B[k,j]
+    
+    fmadd s0, s1, s2, s0
+    
+    add x8, x8, #1
+    b k_loop
 
+store_res:
+    // C[i,j] = s0
+    mul x9, x6, x4
+    add x9, x9, x7
+    str s0, [x2, x9, lsl #2]
+
+    add x7, x7, #1
+    b col_loop
+
+next_row:
+    add x0, x0, x5, lsl #2     // Переходим к следующей строке A (x0 + K*4)
+    add x6, x6, #1
+    b row_loop
+
+mat_done:
+    ret
