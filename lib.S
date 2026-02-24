@@ -228,7 +228,7 @@ SYM(vector_gelu):
     movk w3, #0xd89d, lsl #0
     movk w3, #0x3fda, lsl #16
     fmov s4, w3            // Переносим в плавающую точку
-    dup v4.4s, s4          // Размножаем 1.702 по вектору
+    dup v4.4s, v4.s[0]          // Размножаем 1.702 по вектору
     
     fmov v5.4s, #1.0
     fmov v6.4s, #0.5
@@ -269,7 +269,7 @@ SYM(vector_softmax):
     // аппроксимацию: exp(x) ≈ (1 + x/n)^n
     // Или вызываем стандартную библиотеку. Но для теста сделаем просто:
     // v_exp = x - max
-    dup v1.4s, s1
+    dup v1.4s, v1.s[0]
     ld1 {v0.4s}, [x0]
     fsub v0.4s, v0.4s, v1.4s
     
@@ -280,7 +280,7 @@ SYM(vector_softmax):
     // 3. Normalization
     faddp v4.4s, v3.4s, v3.4s
     faddp s4, v4.2s          // Сумма всех элементов
-    dup v4.4s, s4
+    dup v4.4s, v4.s[0]
     fdiv v0.4s, v3.4s, v4.4s
     st1 {v0.4s}, [x1]
 soft_exit:
