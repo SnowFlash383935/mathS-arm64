@@ -223,46 +223,42 @@ add_done:
 // --- GELU ---
 // Используем трюк: загружаем 1.702 через обычный регистр и копируем в вектор
 // void vector_gelu(float* in, float* out, int n)
-// --- GeLU на стероидах (Точность + Стабильность) ---
+// --- GeLU через аппроксимацию корнем (твоя формула) ---
 SYM(vector_gelu):
     cbz x2, gelu_exit
     
-    // Загружаем 1.702 (0x3fda9933) через "черный ход"
+    // Константа 1.702 (0x3fda9933)
     mov w3, #0x9933
     movk w3, #0x3fda, lsl #16
-    fmov s4, w3            // Теперь s4 точно содержит 1.702
-    dup v4.4s, v4.s[0]     // Размножаем по всему вектору
+    fmov s4, w3            
+    dup v4.4s, v4.s[0]     // v4 = 1.702
 
-    // Загружаем 0.25 (1/4) - это fmov понимает
-    fmov v7.4s, #0.25
-    fmov v5.4s, #0.5
-    fmov v6.4s, #1.0
-    
-    // Константа 1.5 для знаменателя (0x3fc00000)
-    fmov s10, #1.5
-    dup v10.4s, v10.s[0]
+    fmov v5.4s, #0.5       // 0.5
+    fmov v6.4s, #1.0       // 1.0
 
 gelu_loop:
     cmp x2, #4
     b.lt gelu_exit
     
     ld1 {v0.4s}, [x0], #16      // v0 = x
-    fmul v1.4s, v0.4s, v4.4s    // v1 = 1.702 * x
+    fmul v1.4s, v0.4s, v4.4s    // v1 = a (1.702 * x)
 
-    // Улучшенная сигмоида: 0.5 + 0.5 * v / (1.5 + |v| + 0.25*v^2)
-    fabs v2.4s, v1.4s           // |v|
-    fmul v3.4s, v1.4s, v1.4s    // v^2
-    fmul v3.4s, v3.4s, v7.4s    // 0.25 * v^2
+    // Считаем a / sqrt(1 + a^2)
+    fmul v2.4s, v1.4s, v1.4s    // a^2
+    fadd v2.4s, v2.4s, v6.4s    // 1 + a^2
     
-    fadd v2.4s, v2.4s, v3.4s    // |v| + 0.25 * v^2
-    fadd v2.4s, v2.4s, v10.4s   // 1.5 + |v| + 0.25 * v^2
+    frsqrte v3.4s, v2.4s        // Приблизительный 1/sqrt(x) - ОЧЕНЬ БЫСТРО
+    // Уточняем корень (один шаг метода Ньютона-Рафсона для точности)
+    fmul v7.4s, v3.4s, v3.4s
+    frsqrts v7.4s, v2.4s, v7.4s
+    fmul v3.4s, v3.4s, v7.4s    // Теперь v3 — точный 1/sqrt(1+a^2)
     
-    fdiv v3.4s, v1.4s, v2.4s    // v / (...)
+    fmul v3.4s, v1.4s, v3.4s    // v3 = a / sqrt(1 + a^2) ≈ tanh
     
-    fmul v3.4s, v3.4s, v5.4s    // * 0.5
-    fadd v3.4s, v3.4s, v5.4s    // + 0.5 (Sigmoid готово)
+    fadd v3.4s, v3.4s, v6.4s    // (1 + tanh)
+    fmul v3.4s, v3.4s, v5.4s    // 0.5 * (1 + tanh)
     
-    fmul v0.4s, v0.4s, v3.4s    // x * Sigmoid
+    fmul v0.4s, v0.4s, v3.4s    // x * ...
     st1 {v0.4s}, [x1], #16
     
     sub x2, x2, #4
