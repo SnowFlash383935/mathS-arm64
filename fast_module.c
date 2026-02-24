@@ -88,11 +88,24 @@ static PyObject* method_matrix_mul(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+extern void vector_relu(float* in, float* out, int n);
+
+static PyObject* method_vector_relu(PyObject* self, PyObject* args) {
+    Py_buffer in_v, out_v;
+    if (!PyArg_ParseTuple(args, "y*y*", &in_v, &out_v)) return NULL;
+    int n = in_v.len / sizeof(float);
+    vector_relu((float*)in_v.buf, (float*)out_v.buf, n);
+    PyBuffer_Release(&in_v);
+    PyBuffer_Release(&out_v);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
     {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
     {"matrix_mul", method_matrix_mul, METH_VARARGS, "Matrix Multiplication"},
+    {"vector_relu", method_vector_relu, METH_VARARGS, "Fast Vector ReLU"}
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
