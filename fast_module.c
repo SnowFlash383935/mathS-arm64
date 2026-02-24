@@ -116,6 +116,42 @@ static PyObject* method_vector_add(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+// Прототипы из lib.S
+extern void vector_gelu(float* in, float* out, int n);
+extern void vector_softmax(float* in, float* out, int n);
+
+// --- Метод GELU ---
+static PyObject* method_vector_gelu(PyObject* self, PyObject* args) {
+    Py_buffer in_v, out_v;
+    if (!PyArg_ParseTuple(args, "y*y*", &in_v, &out_v)) return NULL;
+
+    // Считаем количество элементов (каждый float = 4 байта)
+    int n = in_v.len / sizeof(float);
+    
+    // Вызываем наше ассемблерное ядро
+    vector_gelu((float*)in_v.buf, (float*)out_v.buf, n);
+
+    PyBuffer_Release(&in_v);
+    PyBuffer_Release(&out_v);
+    Py_RETURN_NONE;
+}
+
+// --- Метод Softmax ---
+static PyObject* method_vector_softmax(PyObject* self, PyObject* args) {
+    Py_buffer in_v, out_v;
+    if (!PyArg_ParseTuple(args, "y*y*", &in_v, &out_v)) return NULL;
+
+    int n = in_v.len / sizeof(float);
+    
+    // Внимание: текущая версия Softmax в lib.S заточена под n=4 (Attention heads)
+    // Для больших векторов GPT-2 мы ее расширим позже
+    vector_softmax((float*)in_v.buf, (float*)out_v.buf, n);
+
+    PyBuffer_Release(&in_v);
+    PyBuffer_Release(&out_v);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
     {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
@@ -123,6 +159,8 @@ static PyMethodDef MathSMethods[] = {
     {"matrix_mul", method_matrix_mul, METH_VARARGS, "Matrix Multiplication"},
     {"vector_relu", method_vector_relu, METH_VARARGS, "Fast Vector ReLU"},
     {"vector_add", method_vector_add, METH_VARARGS, "Vector Addition"},
+    {"vector_gelu", method_vector_gelu, METH_VARARGS, "Vector GELU (NEON)"},
+    {"vector_softmax", method_vector_softmax, METH_VARARGS, "Vector Softmax (NEON)"},
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
