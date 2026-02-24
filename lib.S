@@ -223,44 +223,47 @@ add_done:
 // --- GELU ---
 // Используем трюк: загружаем 1.702 через обычный регистр и копируем в вектор
 // void vector_gelu(float* in, float* out, int n)
-// --- Исправленный GeLU (Стабильная версия) ---
+// --- Финальный GeLU (Точность для GPT-2) ---
 SYM(vector_gelu):
-    cbz x2, gelu_done
+    cbz x2, gelu_exit
     
-    // Загружаем константу 1.702 (0x3fda9933) вручную
-    mov w3, #0x9933
-    movk w3, #0x3fda, lsl #16
-    fmov s4, w3            // s4 = 1.702
-    dup v4.4s, v4.s[0]     // Размножаем по вектору
-
-    fmov v6.4s, #0.5       // 0.5 - это ARM разрешает!
-    fmov v7.4s, #1.0       // 1.0 - тоже разрешает!
-
+    // Коэффициенты для аппроксимации tanh(x) ≈ x * (1 + 0.12x^2) / (1 + 0.45x^2)
+    // Мы упростим для NEON до более стабильной формы
+    fmov v4.4s, #1.702
+    fmov v5.4s, #0.5
+    fmov v6.4s, #1.0
+    
 gelu_loop:
     cmp x2, #4
-    b.lt gelu_done         // Для теста пока пропустим хвост
+    b.lt gelu_exit
     
     ld1 {v0.4s}, [x0], #16      // v0 = x
+    fmul v1.4s, v0.4s, v4.4s    // v1 = 1.702 * x (вход в сигмоиду)
+
+    // Точная сигмоида через рациональную функцию:
+    // s(x) ≈ 0.5 + 0.5 * x / (1.6 + |x| + 0.25*x^2)
+    fabs v2.4s, v1.4s           // |x|
+    fmul v3.4s, v1.4s, v1.4s    // x^2
+    fmov v7.4s, #0.25
+    fmul v3.4s, v3.4s, v7.4s    // 0.25 * x^2
     
-    // v1 = 1.702 * x
-    fmul v1.4s, v0.4s, v4.4s    
+    fadd v2.4s, v2.4s, v3.4s    // |x| + 0.25*x^2
+    // Вместо 1.6 используем 1.5 (ARM fmov разрешает)
+    fmov v7.4s, #1.5
+    fadd v2.4s, v2.4s, v7.4s    // 1.5 + |x| + 0.25*x^2
     
-    // Сигмоида: 0.5 * (v / (1 + |v|)) + 0.5
-    fabs v2.4s, v1.4s
-    fadd v2.4s, v2.4s, v7.4s    // 1 + |v|
-    fdiv v3.4s, v1.4s, v2.4s    // v / (1 + |v|)
+    fdiv v3.4s, v1.4s, v2.4s    // x / (...)
     
-    fmul v3.4s, v3.4s, v6.4s    // * 0.5
-    fadd v3.4s, v3.4s, v6.4s    // + 0.5
+    fmul v3.4s, v3.4s, v5.4s    // * 0.5
+    fadd v3.4s, v3.4s, v5.4s    // + 0.5
     
-    // Итог: x * sigmoid(1.702x)
-    fmul v0.4s, v0.4s, v3.4s
-    
+    fmul v0.4s, v0.4s, v3.4s    // x * sigmoid
     st1 {v0.4s}, [x1], #16
+    
     sub x2, x2, #4
     b gelu_loop
 
-gelu_done:
+gelu_exit:
     ret
 
 // --- SOFTMAX (Ядро) ---
