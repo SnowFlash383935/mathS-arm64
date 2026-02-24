@@ -17,13 +17,16 @@ class NeonLayer:
 
     def forward(self, x_input):
         # 1. MatMul: Temp = Weights * Input
+        # matrix_mul(A, B, C, M, N, K) - тут 6 аргументов, всё верно
         mathS.matrix_mul(self.weights, x_input, self.temp, self.M, self.N, self.K)
         
         # 2. Add Bias: Temp = Temp + Bias
-        mathS.vector_add(self.temp, self.bias, self.temp, self.M)
+        # В твоем C-коде vector_add ждет только (A, B, Out)
+        mathS.vector_add(self.temp, self.bias, self.temp) # <-- УБРАЛИ self.M
         
         # 3. Activation: Output = ReLU(Temp)
-        mathS.vector_relu(self.temp, self.output, self.M)
+        # В твоем C-коде vector_relu ждет только (In, Out)
+        mathS.vector_relu(self.temp, self.output) # <-- УБРАЛИ self.M
         
         return self.output
 
