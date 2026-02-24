@@ -246,5 +246,5 @@ gelu_loop:
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
     b gelu_loop
-sig_done:
+gelu_done:
     ret
