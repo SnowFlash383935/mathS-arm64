@@ -105,7 +105,7 @@ static PyMethodDef MathSMethods[] = {
     {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
     {"matrix_mul", method_matrix_mul, METH_VARARGS, "Matrix Multiplication"},
-    {"vector_relu", method_vector_relu, METH_VARARGS, "Fast Vector ReLU"}
+    {"vector_relu", method_vector_relu, METH_VARARGS, "Fast Vector ReLU"},
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
