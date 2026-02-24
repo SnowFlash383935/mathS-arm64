@@ -152,3 +152,42 @@ if success:
 # Просто чтобы понять масштаб:
 time_py_est = 0.0001 * (M * N * K) # Грубая оценка: 100 мкс на одну операцию в Python
 print(f"Теоретическое ускорение относительно вложенных циклов Python: ~{time_py_est / time_asm:.1f}x")
+
+# --- Тест Vector ReLU ---
+print("\n--- Тест Vector ReLU (Rectified Linear Unit) ---")
+
+n = 1_000_000
+# Генерируем данные: от -500,000 до +500,000
+data_in = array.array('f', [float(i - n//2) for i in range(n)])
+data_out_asm = array.array('f', [0.0] * n)
+
+# 1. Тест Python (через встроенный max)
+start_py = time.perf_counter()
+data_out_py = array.array('f', (max(0.0, x) for x in data_in))
+time_py = time.perf_counter() - start_py
+print(f"Python (max 0,x): {time_py:.5f}s")
+
+# 2. Тест mathS (ASM NEON fmaxnm)
+start_asm = time.perf_counter()
+mathS.vector_relu(data_in, data_out_asm)
+time_asm = time.perf_counter() - start_asm
+print(f"mathS (relu):     {time_asm:.5f}s")
+
+print(f"Ускорение: {time_py / time_asm:.2f}x")
+
+# Проверка корректности
+success = True
+for i in range(n):
+    expected = max(0.0, data_in[i])
+    if abs(data_out_asm[i] - expected) > 1e-7:
+        print(f"Ошибка в индексе {i}: вход {data_in[i]}, ожидалось {expected}, получили {data_out_asm[i]}")
+        success = False
+        break
+
+if success:
+    # Проверим пару граничных значений вручную для красоты
+    print(f"Вход {data_in[0]}    -> ReLU: {data_out_asm[0]}")
+    print(f"Вход {data_in[n//2]}   -> ReLU: {data_out_asm[n//2]}")
+    print(f"Вход {data_in[n-1]} -> ReLU: {data_out_asm[n-1]}")
+    print("РЕЗУЛЬТАТ: Успех!")
+    
