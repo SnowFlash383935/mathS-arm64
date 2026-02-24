@@ -191,3 +191,35 @@ if success:
     print(f"Вход {data_in[n-1]} -> ReLU: {data_out_asm[n-1]}")
     print("РЕЗУЛЬТАТ: Успех!")
     
+print("\n--- Тест Vector Add (Сложение векторов) ---")
+
+n = 1_000_000
+a = array.array('f', [1.5] * n)
+b = array.array('f', [2.5] * n)
+res_asm = array.array('f', [0.0] * n)
+
+# 1. Тест Python (List comprehension)
+start_py = time.perf_counter()
+res_py = array.array('f', (x + y for x, y in zip(a, b)))
+time_py = time.perf_counter() - start_py
+print(f"Python (zip+gen): {time_py:.5f}s")
+
+# 2. Тест mathS (ASM NEON fadd)
+start_asm = time.perf_counter()
+mathS.vector_add(a, b, res_asm)
+time_asm = time.perf_counter() - start_asm
+print(f"mathS (add):      {time_asm:.5f}s")
+
+print(f"Ускорение: {time_py / time_asm:.2f}x")
+
+# Проверка корректности
+success = True
+for i in range(10): # Проверим первые 10 элементов
+    if abs(res_asm[i] - 4.0) > 1e-7:
+        success = False
+        break
+
+if success:
+    print(f"Результат [0]: {res_asm[0]} (Ожидалось 4.0)")
+    print("РЕЗУЛЬТАТ: Успех!")
+        
