@@ -12,6 +12,7 @@
 .global SYM(vector_inv_sqrt)
 .global SYM(vector_sigmoid)
 .global SYM(vector_dot)
+.global SYM(vector_relu)
 .global SYM(matrix_mul)
 
 // --- HYPOT ---
@@ -164,4 +165,31 @@ next_row:
     add x6, x6, #1
     b row_loop
 mat_done:
+    ret
+
+// void vector_relu(float* in, float* out, int n)
+SYM(vector_relu):
+    eor v1.16b, v1.16b, v1.16b   // Создаем вектор из нулей (v1 = [0,0,0,0])
+    cbz x2, relu_done
+
+relu_loop:
+    cmp x2, #4
+    b.lt relu_tail
+    
+    ld1 {v0.4s}, [x0], #16      // Загружаем 4 float
+    fmaxnm v2.4s, v0.4s, v1.4s  // v2 = max(v0, 0)
+    st1 {v2.4s}, [x1], #16      // Сохраняем
+    
+    sub x2, x2, #4
+    b relu_loop
+
+relu_tail:
+    cbz x2, relu_done
+    ldr s0, [x0], #4
+    fmaxnm s2, s0, s1           // Скалярный максимум
+    str s2, [x1], #4
+    sub x2, x2, #1
+    b relu_tail
+
+relu_done:
     ret
