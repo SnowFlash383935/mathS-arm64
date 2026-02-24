@@ -221,64 +221,60 @@ add_done:
     ret
 
 // --- GELU ---
-// Используем трюк: загружаем 1.702 через обычный регистр и копируем в вектор
 // void vector_gelu(float* in, float* out, int n)
-// --- OpenAI GELU (High Precision) ---
+// --- OpenAI GeLU: Final Precision ---
 SYM(vector_gelu):
-    cbz x2, gelu_done
+    cbz x2, gelu_exit
     
-    // Константы
-    mov w3, #0x3d2d        // 0.044715
-    movk w3, #0x3730, lsl #0
-    movk w3, #0x3d2d, lsl #16
-    fmov s4, w3            
-    dup v4.4s, v4.s[0]     // v4 = 0.044715
+    // Коэффициенты полинома
+    mov w3, #0x3d2d; movk w3, #0x3d2d, lsl #16 // 0.044715
+    fmov s4, w3; dup v4.4s, v4.s[0]
+    
+    mov w3, #0x3f4c; movk w3, #0x3f4c, lsl #16 // 0.79788
+    fmov s5, w3; dup v5.4s, v5.s[0]
 
-    mov w3, #0x3f4c        // 0.79788
-    movk w3, #0xc5f1, lsl #0
-    movk w3, #0x3f4c, lsl #16
-    fmov s5, w3            
-    dup v5.4s, v5.s[0]     // v5 = 0.79788
+    // Коэффициенты для tanh (Паде)
+    mov w3, #0x3dd7; movk w3, #0x3dd7, lsl #16 // 0.105
+    fmov s10, w3; dup v10.4s, v10.s[0]
+    
+    mov w3, #0x3ee3; movk w3, #0x3ee3, lsl #16 // 0.444
+    fmov s11, w3; dup v11.4s, v11.s[0]
 
-    fmov v6.4s, #0.5       
-    fmov v7.4s, #1.0       
+    fmov v6.4s, #0.5
+    fmov v7.4s, #1.0
 
 gelu_loop:
     cmp x2, #4
-    b.lt gelu_done
-    
+    b.lt gelu_exit
     ld1 {v0.4s}, [x0], #16      // v0 = x
     
-    // 1. Считаем внутренний полином: x + 0.044715 * x^3
+    // 1. Внутренний полином: a = 0.79788 * (x + 0.044715 * x^3)
     fmul v1.4s, v0.4s, v0.4s    // x^2
-    fmul v1.4s, v1.4s, v0.4s    // x^3
-    fmul v1.4s, v1.4s, v4.4s    // 0.044715 * x^3
-    fadd v1.4s, v1.4s, v0.4s    // x + ...
+    fmul v2.4s, v1.4s, v0.4s    // x^3
+    fmul v2.4s, v2.4s, v4.4s    // 0.044715 * x^3
+    fadd v2.4s, v2.4s, v0.4s    // (x + ...)
+    fmul v1.4s, v2.4s, v5.4s    // v1 = a
     
-    // 2. Умножаем на 0.79788
-    fmul v1.4s, v1.4s, v5.4s    // a = 0.79788 * (...)
-
-    // 3. Считаем tanh(a) через твою корневую формулу: a / sqrt(1 + a^2)
-    fmul v2.4s, v1.4s, v1.4s    
-    fadd v2.4s, v2.4s, v7.4s    // 1 + a^2
+    // 2. Рациональный tanh(a) ≈ a * (1 + 0.105*a^2) / (1 + 0.444*a^2)
+    fmul v2.4s, v1.4s, v1.4s    // a^2
+    fmul v3.4s, v2.4s, v10.4s   // 0.105 * a^2
+    fadd v3.4s, v3.4s, v7.4s    // Числитель: (1 + ...)
+    fmul v3.4s, v3.4s, v1.4s    // a * (1 + ...)
     
-    frsqrte v3.4s, v2.4s        // 1/sqrt оценка
-    fmul v8.4s, v3.4s, v3.4s    // Уточнение Ньютона-Рафсона
-    frsqrts v8.4s, v2.4s, v8.4s
-    fmul v3.4s, v3.4s, v8.4s    // v3 = 1/sqrt(1+a^2)
+    fmul v8.4s, v2.4s, v11.4s   // 0.444 * a^2
+    fadd v8.4s, v8.4s, v7.4s    // Знаменатель: (1 + ...)
     
-    fmul v3.4s, v1.4s, v3.4s    // tanh_approx = a * 1/sqrt(...)
+    fdiv v3.4s, v3.4s, v8.4s    // v3 = tanh_approx
     
-    // 4. Финальная сборка: 0.5 * x * (1 + tanh)
-    fadd v3.4s, v3.4s, v7.4s    // 1 + tanh
-    fmul v3.4s, v3.4s, v6.4s    // 0.5 * (1 + tanh)
-    fmul v0.4s, v0.4s, v3.4s    // x * ...
+    // 3. Сборка: 0.5 * x * (1 + tanh)
+    fadd v3.4s, v3.4s, v7.4s
+    fmul v3.4s, v3.4s, v6.4s
+    fmul v0.4s, v0.4s, v3.4s
     
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
     b gelu_loop
-
-gelu_done:
+gelu_exit:
     ret
 
 // --- SOFTMAX (Ядро) ---
