@@ -36,14 +36,4 @@ for i in range(n):
 print(f"Максимальное отклонение: {max_diff:.6f}")
 if max_diff < 0.05: # Для нашей быстрой аппроксимации это отлично
     print("ТОЧНОСТЬ: ПРИЕМЛЕМО (для инференса GPT-2)")
-layer = NeonLayer(1024, 512)
-input_vector = array.array('f', [random.random() for _ in range(1024)])
-
-# Замеряем время инференса
-start = time.perf_counter()
-for _ in range(1000): # Делаем 1000 предсказаний
-    res = layer.forward(input_vector)
-end = time.perf_counter()
-
-print(f"Среднее время одного прохода (инференс): {(end - start):.6f} ms")
-print(f"Результат (первые 5 значений): {res[:5]}")
+    
