@@ -15,6 +15,7 @@
 .global SYM(vector_relu)
 .global SYM(matrix_mul)
 .global SYM(vector_add)
+.global SYM(vector_gelu)
 
 // --- HYPOT ---
 SYM(vector_hypot):
@@ -216,4 +217,34 @@ add_tail:
     sub x3, x3, #1
     b add_tail
 add_done:
+    ret
+
+// void vector_gelu(float* in, float* out, int n)
+SYM(vector_gelu):
+    // Приблизительная формула: 0.5 * x * (1 + tanh(...))
+    // Для скорости часто используют: x * sigmoid(1.702 * x)
+    // Давай сделаем через наш sigmoid, который уже есть!
+    fmov v4.4s, #1.702
+    
+gelu_loop:
+    cmp x2, #4
+    b.lt gelu_done
+    ld1 {v0.4s}, [x0], #16
+    fmul v1.4s, v0.4s, v4.4s   // 1.702 * x
+    
+    // Тут мы могли бы вызвать наш sigmoid, но внутри ASM 
+    // проще развернуть его логику: x / (1 + |x|) * 0.5 + 0.5
+    fabs v2.4s, v1.4s
+    fmov v5.4s, #1.0
+    fadd v2.4s, v2.4s, v5.4s
+    fdiv v3.4s, v1.4s, v2.4s
+    fmov v6.4s, #0.5
+    fmul v3.4s, v3.4s, v6.4s
+    fadd v3.4s, v3.4s, v6.4s    // v3 = sigmoid(1.702 * x)
+    
+    fmul v0.4s, v0.4s, v3.4s    // x * sigmoid(...)
+    st1 {v0.4s}, [x1], #16
+    sub x2, x2, #4
+    b gelu_loop
+sig_done:
     ret
