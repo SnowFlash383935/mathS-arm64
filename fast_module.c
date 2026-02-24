@@ -100,12 +100,29 @@ static PyObject* method_vector_relu(PyObject* self, PyObject* args) {
     Py_RETURN_NONE;
 }
 
+extern void vector_add(float* a, float* b, float* out, int n);
+
+static PyObject* method_vector_add(PyObject* self, PyObject* args) {
+    Py_buffer a_v, b_v, out_v;
+    // Парсим три буфера байтов
+    if (!PyArg_ParseTuple(args, "y*y*y*", &a_v, &b_v, &out_v)) return NULL;
+
+    int n = a_v.len / sizeof(float);
+    vector_add((float*)a_v.buf, (float*)b_v.buf, (float*)out_v.buf, n);
+
+    PyBuffer_Release(&a_v);
+    PyBuffer_Release(&b_v);
+    PyBuffer_Release(&out_v);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef MathSMethods[] = {
     {"vector_hypot", method_vector_hypot, METH_VARARGS, "Vectorized Pythagoras"},
     {"vector_dot", method_vector_dot, METH_VARARGS, "Vector Dot Product"},
     {"vector_inv_sqrt", method_vector_inv_sqrt, METH_VARARGS, "Fast 1/sqrt(x)"},
     {"matrix_mul", method_matrix_mul, METH_VARARGS, "Matrix Multiplication"},
     {"vector_relu", method_vector_relu, METH_VARARGS, "Fast Vector ReLU"},
+    {"vector_add", method_vector_add, METH_VARARGS, "Vector Addition"},
     {"vector_sigmoid", method_vector_sigmoid, METH_VARARGS, "Fast Vector Sigmoid"},
     {NULL, NULL, 0, NULL}
 };
