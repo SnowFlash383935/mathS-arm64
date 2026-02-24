@@ -14,6 +14,7 @@
 .global SYM(vector_dot)
 .global SYM(vector_relu)
 .global SYM(matrix_mul)
+.global SYM(vector_add)
 
 // --- HYPOT ---
 SYM(vector_hypot):
@@ -192,4 +193,27 @@ relu_tail:
     b relu_tail
 
 relu_done:
+    ret
+
+// void vector_add(float* a, float* b, float* out, int n)
+SYM(vector_add):
+    cbz x3, add_done
+add_loop:
+    cmp x3, #4
+    b.lt add_tail
+    ld1 {v0.4s}, [x0], #16      // Загружаем 4 float из A
+    ld1 {v1.4s}, [x1], #16      // Загружаем 4 float из B
+    fadd v2.4s, v0.4s, v1.4s    // Складываем
+    st1 {v2.4s}, [x2], #16      // Сохраняем
+    sub x3, x3, #4
+    b add_loop
+add_tail:
+    cbz x3, add_done
+    ldr s0, [x0], #4
+    ldr s1, [x1], #4
+    fadd s2, s0, s1
+    str s2, [x2], #4
+    sub x3, x3, #1
+    b add_tail
+add_done:
     ret
