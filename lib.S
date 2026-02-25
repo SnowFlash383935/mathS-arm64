@@ -222,16 +222,15 @@ add_done:
 
 // --- GELU ---
 // void vector_gelu(float* in, float* out, int n)
-// --- Softsign-GELU (Твоя формула) ---
-// y = 0.5 * x * (1.0 + x / sqrt(pi + x*x))
+// --- Precision Root-GELU ---
 SYM(vector_gelu):
     cbz x2, gelu_done
     
-    // Загружаем константу PI (3.14159265 -> 0x40490fdb)
+    // Константа k = 1.5707 (0x3fc90fdb)
     mov w3, #0x0fdb
-    movk w3, #0x4049, lsl #16
+    movk w3, #0x3fc9, lsl #16
     fmov s4, w3
-    dup v4.4s, v4.s[0]     // v4 = [pi, pi, pi, pi]
+    dup v4.4s, v4.s[0]     // v4 = [1.57, 1.57, 1.57, 1.57]
 
     fmov v5.4s, #0.5
     fmov v6.4s, #1.0
@@ -239,34 +238,27 @@ SYM(vector_gelu):
 gelu_loop:
     cmp x2, #4
     b.lt gelu_done
+    ld1 {v0.4s}, [x0], #16      
     
-    ld1 {v0.4s}, [x0], #16      // v0 = x
-    
-    // 1. Считаем pi + x*x
     fmul v1.4s, v0.4s, v0.4s    // x^2
-    fadd v1.4s, v1.4s, v4.4s    // x^2 + pi
+    fadd v1.4s, v1.4s, v4.4s    // x^2 + 1.57
     
-    // 2. Считаем 1/sqrt(pi + x^2) - Используем магию NEON
-    frsqrte v2.4s, v1.4s        // Приблизительное 1/sqrt
-    // Уточняем корень (Шаг Ньютона-Рафсона для точности)
+    frsqrte v2.4s, v1.4s        // 1/sqrt оценка
     fmul v3.4s, v2.4s, v2.4s
     frsqrts v3.4s, v1.4s, v3.4s
-    fmul v2.4s, v2.4s, v3.4s    // v2 = точный 1/sqrt(...)
+    fmul v2.4s, v2.4s, v3.4s    // v2 = 1/sqrt(x^2 + 1.57)
     
-    // 3. Считаем x / sqrt(...)
-    fmul v2.4s, v0.4s, v2.4s    
-    
-    // 4. Сборка: 0.5 * x * (1.0 + x/sqrt)
-    fadd v2.4s, v2.4s, v6.4s    // (1.0 + x/sqrt)
+    fmul v2.4s, v0.4s, v2.4s    // x / sqrt(...)
+    fadd v2.4s, v2.4s, v6.4s    // (1 + x/sqrt)
     fmul v2.4s, v2.4s, v5.4s    // 0.5 * (1 + x/sqrt)
-    fmul v0.4s, v0.4s, v2.4s    // x * 0.5 * (...)
+    fmul v0.4s, v0.4s, v2.4s    // x * ...
     
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
     b gelu_loop
-
 gelu_done:
     ret
+
 
 // --- SOFTMAX (Ядро) ---
 // x0 - vec_in, x1 - vec_out, x2 - n
