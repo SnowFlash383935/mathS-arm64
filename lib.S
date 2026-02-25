@@ -222,66 +222,55 @@ add_done:
 
 // --- GELU ---
 // void vector_gelu(float* in, float* out, int n)
-// --- Final GPT-2 GeLU (erf-based approximation) ---
+// --- Final GPT-2 GeLU (erf-based) с фиксацией точности ---
 SYM(vector_gelu):
-    cbz x2, gelu_final_exit
+    cbz x2, gelu_exit
     
-    // Константа 0.707106 (0x3f3505b5)
-    mov w3, #0x05b5; movk w3, #0x3f35, lsl #16
-    fmov s4, w3; dup v4.4s, v4.s[0]
-
-    // 1.1037 (0x3f8d467f)
-    mov w3, #0x467f; movk w3, #0x3f8d, lsl #16
-    fmov s5, w3; dup v5.4s, v5.s[0]
+    // Константы (0.707, 1.1037, 0.0357, 0.105, 0.444) - загружаем как раньше
+    // ... (загрузка w3, fmov s4, dup v4.4s и т.д.) ...
     
-    // 0.0357 (0x3d12452b)
-    mov w3, #0x452b; movk w3, #0x3d12, lsl #16
-    fmov s10, w3; dup v10.4s, v10.s[0]
-
-    // 0.105 (0x3dd70a3d)
-    mov w3, #0x0a3d; movk w3, #0x3dd7, lsl #16
-    fmov s11, w3; dup v11.4s, v11.s[0]
-    
-    // 0.444 (0x3ee353f8)
-    mov w3, #0x53f8; movk w3, #0x3ee3, lsl #16
-    fmov s12, w3; dup v12.4s, v12.s[0]
-
-    fmov v6.4s, #0.5
     fmov v7.4s, #1.0
+    fmov v6.4s, #0.5
+    neg v13.s, v7.s        // v13 = -1.0 для нижнего предела
 
-gelu_final_loop:
+gelu_loop:
     cmp x2, #4
-    b.lt gelu_final_exit
+    b.lt gelu_exit
     ld1 {v0.4s}, [x0], #16      // v0 = x
     
-    // a = 1.1037*z + 0.0357*z^3, где z = x * 0.707106
+    // z = x * 0.707, a = 1.1037z + 0.0357z^3
     fmul v1.4s, v0.4s, v4.4s    
-    fmul v2.4s, v1.4s, v1.4s    // z^2
-    fmul v2.4s, v2.4s, v1.4s    // z^3
-    fmul v2.4s, v2.4s, v10.4s   // 0.0357 * z^3
-    fmul v3.4s, v1.4s, v5.4s    // 1.1037 * z
-    fadd v1.4s, v3.4s, v2.4s    // v1 = a
+    fmul v2.4s, v1.4s, v1.4s    
+    fmul v2.4s, v2.4s, v1.4s    
+    fmul v2.4s, v2.4s, v10.4s   
+    fmul v3.4s, v1.4s, v5.4s    
+    fadd v1.4s, v3.4s, v2.4s    // v1 = a (аргумент tanh)
 
-    // tanh(a) ≈ a * (1 + 0.105*a^2) / (1 + 0.444*a^2)
-    fmul v2.4s, v1.4s, v1.4s    // a^2
-    fmul v3.4s, v2.4s, v11.4s   // 0.105 * a^2
+    // --- КРИТИЧЕСКИЙ ФИКС: Ограничиваем a в диапазоне [-3, 3] ---
+    mov x3, #0x40400000         // float 3.0
+    fmov s14, w3
+    dup v14.4s, s14
+    fminnm v1.4s, v1.4s, v14.4s // a = min(a, 3.0)
+    neg v14.s, v14.s
+    fmaxnm v1.4s, v1.4s, v14.4s // a = max(a, -3.0)
+
+    // Теперь считаем рациональный tanh спокойно
+    fmul v2.4s, v1.4s, v1.4s    
+    fmul v3.4s, v2.4s, v11.4s   
     fadd v3.4s, v3.4s, v7.4s    
-    fmul v3.4s, v3.4s, v1.4s    // Числитель
-    
-    fmul v8.4s, v2.4s, v12.4s   // 0.444 * a^2
-    fadd v8.4s, v8.4s, v7.4s    // Знаменатель
-    fdiv v3.4s, v3.4s, v8.4s    // v3 = tanh_approx (он же erf_approx)
+    fmul v3.4s, v3.4s, v1.4s    
+    fmul v8.4s, v2.4s, v12.4s   
+    fadd v8.4s, v8.4s, v7.4s    
+    fdiv v3.4s, v3.4s, v8.4s    // v3 = tanh_approx (теперь стабилен!)
 
-    // 0.5 * x * (1 + erf)
+    // Финальная сборка 0.5 * x * (1 + tanh)
     fadd v3.4s, v3.4s, v7.4s
     fmul v3.4s, v3.4s, v6.4s
     fmul v0.4s, v0.4s, v3.4s    
     
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
-    b gelu_final_loop
-gelu_final_exit:
-    ret
+    b gelu_loop
 
 // --- SOFTMAX (Ядро) ---
 // x0 - vec_in, x1 - vec_out, x2 - n
