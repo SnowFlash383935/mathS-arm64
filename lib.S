@@ -222,43 +222,59 @@ add_done:
 
 // --- GELU ---
 // void vector_gelu(float* in, float* out, int n)
-// --- Precision Root-GELU ---
+// --- OpenAI GPT-2 GELU ---
 SYM(vector_gelu):
     cbz x2, gelu_done
     
-    // Константа k = 1.5707 (0x3fc90fdb)
-    mov w3, #0x0fdb
-    movk w3, #0x3fc9, lsl #16
+    // Константа 0.044715 (0x3d2d2d2d)
+    mov w3, #0x2d2d; movk w3, #0x3d2d, lsl #16
     fmov s4, w3
-    dup v4.4s, v4.s[0]     // v4 = [1.57, 1.57, 1.57, 1.57]
+    dup v4.4s, v4.s[0]
 
-    fmov v5.4s, #0.5
-    fmov v6.4s, #1.0
+    // Константа sqrt(2/pi) = 0.79788456 (0x3f4c467f)
+    mov w3, #0x467f; movk w3, #0x3f4c, lsl #16
+    fmov s5, w3
+    dup v5.4s, v5.s[0]
+
+    fmov v6.4s, #0.5
+    fmov v7.4s, #1.0
 
 gelu_loop:
     cmp x2, #4
     b.lt gelu_done
-    ld1 {v0.4s}, [x0], #16      
+    ld1 {v0.4s}, [x0], #16      // v0 = x
     
+    // 1. Считаем x^3
     fmul v1.4s, v0.4s, v0.4s    // x^2
-    fadd v1.4s, v1.4s, v4.4s    // x^2 + 1.57
+    fmul v1.4s, v1.4s, v0.4s    // x^3
     
-    frsqrte v2.4s, v1.4s        // 1/sqrt оценка
-    fmul v3.4s, v2.4s, v2.4s
-    frsqrts v3.4s, v1.4s, v3.4s
-    fmul v2.4s, v2.4s, v3.4s    // v2 = 1/sqrt(x^2 + 1.57)
+    // 2. Считаем (x + 0.044715 * x^3)
+    fmul v1.4s, v1.4s, v4.4s    // 0.044715 * x^3
+    fadd v1.4s, v1.4s, v0.4s    // x + ...
     
-    fmul v2.4s, v0.4s, v2.4s    // x / sqrt(...)
-    fadd v2.4s, v2.4s, v6.4s    // (1 + x/sqrt)
-    fmul v2.4s, v2.4s, v5.4s    // 0.5 * (1 + x/sqrt)
-    fmul v0.4s, v0.4s, v2.4s    // x * ...
+    // 3. Умножаем на sqrt(2/pi)
+    fmul v1.4s, v1.4s, v5.4s    // v1 = аргумент для tanh
+    
+    // 4. Аппроксимация tanh(z) ≈ z / (1 + 0.5|z| + 0.1z^2) - очень быстро и точно
+    // Или используем твой метод с корнем, он здесь тоже хорош:
+    fmul v2.4s, v1.4s, v1.4s    // z^2
+    fadd v2.4s, v2.4s, v7.4s    // 1 + z^2
+    frsqrte v3.4s, v2.4s
+    fmul v8.4s, v3.4s, v3.4s
+    frsqrts v8.4s, v2.4s, v8.4s
+    fmul v3.4s, v3.4s, v8.4s    // v3 = 1/sqrt(1+z^2)
+    fmul v1.4s, v1.4s, v3.4s    // tanh ≈ z / sqrt(1+z^2)
+
+    // 5. Финальная сборка: 0.5 * x * (1 + tanh)
+    fadd v1.4s, v1.4s, v7.4s    // (1 + tanh)
+    fmul v1.4s, v1.4s, v6.4s    // 0.5 * (1 + tanh)
+    fmul v0.4s, v0.4s, v1.4s    // x * ...
     
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
     b gelu_loop
 gelu_done:
     ret
-
 
 // --- SOFTMAX (Ядро) ---
 // x0 - vec_in, x1 - vec_out, x2 - n
