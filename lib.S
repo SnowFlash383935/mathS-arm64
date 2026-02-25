@@ -222,55 +222,51 @@ add_done:
 
 // --- GELU ---
 // void vector_gelu(float* in, float* out, int n)
-// --- Final GPT-2 GeLU (erf-based) с фиксацией точности ---
+// --- Softsign-GELU (Твоя формула) ---
+// y = 0.5 * x * (1.0 + x / sqrt(pi + x*x))
 SYM(vector_gelu):
-    cbz x2, gelu_exit
+    cbz x2, gelu_done
     
-    // Константы (0.707, 1.1037, 0.0357, 0.105, 0.444) - загружаем как раньше
-    // ... (загрузка w3, fmov s4, dup v4.4s и т.д.) ...
-    
-    fmov v7.4s, #1.0
-    fmov v6.4s, #0.5
-    neg v13.s, v7.s        // v13 = -1.0 для нижнего предела
+    // Загружаем константу PI (3.14159265 -> 0x40490fdb)
+    mov w3, #0x0fdb
+    movk w3, #0x4049, lsl #16
+    fmov s4, w3
+    dup v4.4s, v4.s[0]     // v4 = [pi, pi, pi, pi]
+
+    fmov v5.4s, #0.5
+    fmov v6.4s, #1.0
 
 gelu_loop:
     cmp x2, #4
-    b.lt gelu_exit
+    b.lt gelu_done
+    
     ld1 {v0.4s}, [x0], #16      // v0 = x
     
-    // z = x * 0.707, a = 1.1037z + 0.0357z^3
-    fmul v1.4s, v0.4s, v4.4s    
-    fmul v2.4s, v1.4s, v1.4s    
-    fmul v2.4s, v2.4s, v1.4s    
-    fmul v2.4s, v2.4s, v10.4s   
-    fmul v3.4s, v1.4s, v5.4s    
-    fadd v1.4s, v3.4s, v2.4s    // v1 = a (аргумент tanh)
-
-    // --- КРИТИЧЕСКИЙ ФИКС: Ограничиваем a в диапазоне [-3, 3] ---
-    mov x3, #0x40400000         // float 3.0
-    fmov s14, w3
-    dup v14.4s, s14
-    fminnm v1.4s, v1.4s, v14.4s // a = min(a, 3.0)
-    neg v14.s, v14.s
-    fmaxnm v1.4s, v1.4s, v14.4s // a = max(a, -3.0)
-
-    // Теперь считаем рациональный tanh спокойно
-    fmul v2.4s, v1.4s, v1.4s    
-    fmul v3.4s, v2.4s, v11.4s   
-    fadd v3.4s, v3.4s, v7.4s    
-    fmul v3.4s, v3.4s, v1.4s    
-    fmul v8.4s, v2.4s, v12.4s   
-    fadd v8.4s, v8.4s, v7.4s    
-    fdiv v3.4s, v3.4s, v8.4s    // v3 = tanh_approx (теперь стабилен!)
-
-    // Финальная сборка 0.5 * x * (1 + tanh)
-    fadd v3.4s, v3.4s, v7.4s
-    fmul v3.4s, v3.4s, v6.4s
-    fmul v0.4s, v0.4s, v3.4s    
+    // 1. Считаем pi + x*x
+    fmul v1.4s, v0.4s, v0.4s    // x^2
+    fadd v1.4s, v1.4s, v4.4s    // x^2 + pi
+    
+    // 2. Считаем 1/sqrt(pi + x^2) - Используем магию NEON
+    frsqrte v2.4s, v1.4s        // Приблизительное 1/sqrt
+    // Уточняем корень (Шаг Ньютона-Рафсона для точности)
+    fmul v3.4s, v2.4s, v2.4s
+    frsqrts v3.4s, v1.4s, v3.4s
+    fmul v2.4s, v2.4s, v3.4s    // v2 = точный 1/sqrt(...)
+    
+    // 3. Считаем x / sqrt(...)
+    fmul v2.4s, v0.4s, v2.4s    
+    
+    // 4. Сборка: 0.5 * x * (1.0 + x/sqrt)
+    fadd v2.4s, v2.4s, v6.4s    // (1.0 + x/sqrt)
+    fmul v2.4s, v2.4s, v5.4s    // 0.5 * (1 + x/sqrt)
+    fmul v0.4s, v0.4s, v2.4s    // x * 0.5 * (...)
     
     st1 {v0.4s}, [x1], #16
     sub x2, x2, #4
     b gelu_loop
+
+gelu_done:
+    ret
 
 // --- SOFTMAX (Ядро) ---
 // x0 - vec_in, x1 - vec_out, x2 - n
