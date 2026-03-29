@@ -15,5 +15,5 @@ jobs:
           clang -shared fast_module.o lib.o -o mathS.so -undefined dynamic_lookup
           
           export PYTHONPATH=.
-          python3 inference_demo.py
+          python3 test_python.py
           
