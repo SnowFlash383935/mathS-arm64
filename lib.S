@@ -314,69 +314,89 @@ SYM(vector_gelu):
 
 
 // void vector_softmax(float* in, float* out, int n)
-// x0 - in, x1 - out, w2 - n (используем w2 для 32-бит)
 SYM(vector_softmax):
     cbz w2, soft_exit
-    mov x3, x0          // Копия для поиска MAX
-    mov w4, w2          // Копия n для счетчика
+    mov x3, x0          
+    mov w4, w2          
     
     // --- 1. Поиск МАКСИМУМА ---
-    // Загружаем -10000.0 через обычный регистр
-    mov w5, #0x461c; movk w5, #0xc61c, lsl #16 // Это примерно -10000.0
+    mov w5, #0x461c; movk w5, #0xc61c, lsl #16 // -10000.0
     fmov s10, w5
-    dup v10.4s, v10.s[0] // Clang съест v10.s[0] если v10 определен как вектор
-
+    dup v10.4s, s10
 find_max_loop:
     ld1 {v0.4s}, [x3], #16
     fmax v10.4s, v10.4s, v0.4s
     subs w4, w4, #4
     b.ne find_max_loop
-    fmaxv s10, v10.4s    // s10 = глобальный max
+    fmaxv s10, v10.4s    
 
-    // --- 2. EXP и SUM ---
+    // --- 2. EXP и SUM (Pade Approximation) ---
     mov x3, x0
     mov w4, w2
-    fmov s11, #0.0       // Сумматор
-    dup v10.4s, v10.s[0] // Размножаем max по всему вектору
-    
-    fmov v20.4s, #1.0    // База для экспоненты (1.0)
-    fmov v21.4s, #0.5    // Коэффициент 0.5 (для x^2/2)
+    fmov s11, #0.0       
+    dup v10.4s, s10
+
+    // Константы Паде (1680, 840, 180, 20)
+    mov w5, #1680; scvtf s16, w5; dup v16.4s, s16
+    mov w5, #840;  scvtf s17, w5; dup v17.4s, s17
+    mov w5, #180;  scvtf s18, w5; dup v18.4s, s18
+    mov w5, #20;   scvtf s19, w5; dup v19.4s, s19
 
 exp_sum_loop:
     ld1 {v0.4s}, [x3], #16
-    fsub v0.4s, v0.4s, v10.4s  // z = x - max
+    fsub v0.4s, v0.4s, v10.4s  // x = z
     
-    // e^z ≈ 1 + z + 0.5*z^2
-    fmul v1.4s, v0.4s, v0.4s   // z^2
-    fmov v2.4s, #1.0           // Сбрасываем временный регистр в 1.0
-    fmla v2.4s, v0.4s, v20.4s  // 1 + z
-    fmla v2.4s, v1.4s, v21.4s  // (1 + z) + 0.5*z^2
+    // Считаем числитель (N) и знаменатель (D)
+    // N = 1680 + x*(840 + x*(180 + x*20))
+    // D = 1680 - x*(840 - x*(180 - x*20))
     
-    // Горизонтальное сложение элементов v2 в s11
-    faddp v3.4s, v2.4s, v2.4s
-    faddp v3.4s, v3.4s, v3.4s
-    fadd s11, s11, s3     // Правильный синтаксис для сложения скаляра
+    // N
+    fmul v1.4s, v0.4s, v19.4s   // x*20
+    fadd v1.4s, v1.4s, v18.4s   // 180 + x*20
+    fmul v1.4s, v1.4s, v0.4s   // x*(...)
+    fadd v1.4s, v1.4s, v17.4s   // 840 + x*(...)
+    fmul v1.4s, v1.4s, v0.4s   // x*(...)
+    fadd v1.4s, v1.4s, v16.4s   // 1680 + x*(...) [Числитель]
+    
+    // D (используем fsub вместо fadd)
+    fmul v2.4s, v0.4s, v19.4s   // x*20
+    fsub v2.4s, v18.4s, v2.4s   // 180 - x*20
+    fmul v2.4s, v2.4s, v0.4s   // x*(...)
+    fsub v2.4s, v17.4s, v2.4s   // 840 - x*(...)
+    fmul v2.4s, v2.4s, v0.4s   // x*(...)
+    fadd v2.4s, v2.4s, v16.4s   // 1680 + x*(...) [Знаменатель]
+    
+    fdiv v1.4s, v1.4s, v2.4s    // exp(x) ≈ N / D
+    
+    // Суммируем
+    faddp v2.4s, v1.4s, v1.4s
+    faddp v2.4s, v2.4s, v2.4s
+    fadd s11, s11, s2
     
     subs w4, w4, #4
     b.ne exp_sum_loop
 
     // --- 3. NORMALIZATION ---
     fmov s12, #1.0
-    fdiv s11, s12, s11         // s11 = 1.0 / sum
-    dup v11.4s, v11.s[0]       // Размножаем inv_sum
+    fdiv s11, s12, s11         
+    dup v11.4s, s11
     
     mov w4, w2
 exp_apply_loop:
     ld1 {v0.4s}, [x0], #16
-    fsub v0.4s, v0.4s, v10.4s  // z = x - max
+    fsub v0.4s, v0.4s, v10.4s
     
-    // Снова считаем ту же аппроксимацию e^z
-    fmul v1.4s, v0.4s, v0.4s
-    fmov v2.4s, #1.0
-    fmla v2.4s, v0.4s, v20.4s
-    fmla v2.4s, v1.4s, v21.4s
+    // Повторяем Паде (N/D)
+    fmul v1.4s, v0.4s, v19.4s; fadd v1.4s, v1.4s, v18.4s
+    fmul v1.4s, v1.4s, v0.4s; fadd v1.4s, v1.4s, v17.4s
+    fmul v1.4s, v1.4s, v0.4s; fadd v1.4s, v1.4s, v16.4s
     
-    fmul v0.4s, v2.4s, v11.4s  // exp(z) * (1/sum)
+    fmul v2.4s, v0.4s, v19.4s; fsub v2.4s, v18.4s, v2.4s
+    fmul v2.4s, v2.4s, v0.4s; fsub v2.4s, v17.4s, v2.4s
+    fmul v2.4s, v2.4s, v0.4s; fadd v2.4s, v2.4s, v16.4s
+    
+    fdiv v1.4s, v1.4s, v2.4s
+    fmul v0.4s, v1.4s, v11.4s  
     st1 {v0.4s}, [x1], #16
     subs w4, w4, #4
     b.ne exp_apply_loop
