@@ -223,9 +223,6 @@ add_done:
 // --- GELU ---
 // vector_gelu(float* in, float* out, int n)
 // x0 - in, x1 - out, w2 - n (32-bit int)
-
-.global vector_gelu
-.type vector_gelu, %function
 SYM(vector_gelu):
     // Проверка на n <= 0
     cmp w2, #0
