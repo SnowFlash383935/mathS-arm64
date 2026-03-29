@@ -279,7 +279,7 @@ time_py = time.perf_counter() - start_py
 # 2. Тест mathS (ASM NEON)
 # Внимание: убедись, что в C-обертке функция принимает (in, out, n)
 start_asm = time.perf_counter()
-mathS.vector_softmax(data_in, res_asm, n) 
+mathS.vector_softmax(data_in, res_asm) 
 time_asm = time.perf_counter() - start_asm
 
 print(f"Python time: {time_py:.5f}s")
