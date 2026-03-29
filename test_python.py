@@ -256,3 +256,45 @@ for i in range(n):
 print(f"Максимальное отклонение: {max_diff:.6f}")
 if max_diff < 0.05: # Для нашей быстрой аппроксимации это отлично
     print("ТОЧНОСТЬ: ПРИЕМЛЕМО (для инференса GPT-2)")
+
+print("\n--- Тест Vector SoftMax ---")
+
+def python_softmax(x_list):
+    # Стабильный SoftMax: вычитаем max для защиты от overflow в exp
+    max_val = max(x_list)
+    exps = [math.exp(x - max_val) for x in x_list]
+    sum_exps = sum(exps)
+    return [e / sum_exps for e in exps]
+
+# Размер вектора (например, размер словаря GPT-2 ~50257 или строка внимания)
+n = 1024 
+data_in = array.array('f', [float(i % 10) for i in range(n)])
+res_asm = array.array('f', [0.0] * n)
+
+# 1. Тест Python
+start_py = time.perf_counter()
+res_py = python_softmax(data_in)
+time_py = time.perf_counter() - start_py
+
+# 2. Тест mathS (ASM NEON)
+# Внимание: убедись, что в C-обертке функция принимает (in, out, n)
+start_asm = time.perf_counter()
+mathS.vector_softmax(data_in, res_asm, n) 
+time_asm = time.perf_counter() - start_asm
+
+print(f"Python time: {time_py:.5f}s")
+print(f"mathS time:  {time_asm:.5f}s")
+print(f"Ускорение:   {time_py / time_asm:.2f}x")
+
+# Проверка корректности
+sum_asm = sum(res_asm)
+max_diff = max(abs(res_py[i] - res_asm[i]) for i in range(n))
+
+print(f"Сумма вероятностей (ASM): {sum_asm:.6f} (Должна быть ~1.0)")
+print(f"Максимальное отклонение:  {max_diff:.8f}")
+
+if abs(sum_asm - 1.0) < 1e-5 and max_diff < 1e-5:
+    print("РЕЗУЛЬТАТ: Успех! SoftMax работает идеально.")
+else:
+    print("РЕЗУЛЬТАТ: Есть расхождения. Проверь точность exp.")
+    
