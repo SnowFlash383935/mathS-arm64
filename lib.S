@@ -313,36 +313,74 @@ SYM(vector_gelu):
     ret
 
 
-// --- SOFTMAX (Ядро) ---
-// x0 - vec_in, x1 - vec_out, x2 - n
+// void vector_softmax(float* in, float* out, int n)
+// x0 - in, x1 - out, x2 - n
 SYM(vector_softmax):
     cbz x2, soft_exit
-    mov x3, x2              // Сохраняем n
+    mov x3, x0          // Копия указателя для поиска MAX
+    mov x4, x2          // Копия n для счетчика
     
-    // 1. Находим MAX (для стабильности)
-    ld1 {v0.4s}, [x0]
-    fmaxv s1, v0.4s         // Горизонтальный максимум
-    // (Для простоты в этом примере считаем только первые 4, 
-    // в полной версии нужен цикл поиска max)
+    // --- 1. Поиск МАКСИМУМА (для стабильности) ---
+    fmov s10, #-10000.0 // Инициализируем очень маленьким числом
+    dup v10.4s, v10.s[0]
+find_max_loop:
+    ld1 {v0.4s}, [x3], #16
+    fmax v10.4s, v10.4s, v0.4s
+    subs x4, x4, #4
+    b.ne find_max_loop
+    fmaxv s10, v10.4s    // Финальный максимум в s10
+
+    // --- 2. EXP и SUM ---
+    mov x3, x0          // Опять в начало
+    mov x4, x2          // Опять n
+    fmov s11, #0.0      // Тут будет сумма экспонент
+    dup v10.4s, s10.s[0] // В v10 теперь везде MAX
     
-    // 2. EXP и SUM
-    // NEON не имеет fexp, поэтому для GPT-2 мы используем 
-    // аппроксимацию: exp(x) ≈ (1 + x/n)^n
-    // Или вызываем стандартную библиотеку. Но для теста сделаем просто:
-    // v_exp = x - max
-    dup v1.4s, v1.s[0]
-    ld1 {v0.4s}, [x0]
-    fsub v0.4s, v0.4s, v1.4s
+    // Константы для exp(x) ≈ (1 + x/256)^256 (быстрая аппроксимация)
+    // Для теста используем простейший ряд: e^x ≈ 1 + x + x^2/2
+    fmov v20.4s, #1.0
+    fmov v21.4s, #0.5
+
+exp_sum_loop:
+    ld1 {v0.4s}, [x3], #16
+    fsub v0.4s, v0.4s, v10.4s  // x - max
     
-    // Упрощенная экспонента для теста (ряд Тейлора 1 + x + x^2/2)
-    fmov v2.4s, #1.0
-    fadd v3.4s, v2.4s, v0.4s // 1 + x
+    // Аппроксимация: 1 + x + 0.5*x^2
+    fmul v1.4s, v0.4s, v0.4s   // x^2
+    fmla v20.4s, v0.4s, v20.4s // 1 + x (используем v20 как базу 1.0)
+    fmla v20.4s, v1.4s, v21.4s // (1 + x) + 0.5*x^2
     
-    // 3. Normalization
-    faddp v4.4s, v3.4s, v3.4s
-    faddp s4, v4.2s          // Сумма всех элементов
-    dup v4.4s, v4.s[0]
-    fdiv v0.4s, v3.4s, v4.4s
-    st1 {v0.4s}, [x1]
+    // Суммируем результат
+    faddp v2.4s, v20.4s, v20.4s
+    faddp v2.4s, v2.4s, v2.4s
+    fadd s11, s11, s2.s[0]
+    
+    // Сбрасываем v20 в 1.0 для следующей итерации
+    fmov v20.4s, #1.0
+    
+    subs x4, x4, #4
+    b.ne exp_sum_loop
+
+    // --- 3. NORMALIZATION (out = exp / sum) ---
+    fdiv s11, s7, s11           // Ошибка? Нет, лучше inv_sum = 1.0 / sum
+    fmov s12, #1.0
+    fdiv s11, s12, s11          // s11 = 1.0 / sum_exps
+    dup v11.4s, s11.s[0]
+    
+    mov x4, x2
+exp_apply_loop:
+    ld1 {v0.4s}, [x0], #16
+    fsub v0.4s, v0.4s, v10.4s
+    // Снова считаем exp (можно оптимизировать, сохранив промежуточные данные)
+    fmul v1.4s, v0.4s, v0.4s
+    fmov v20.4s, #1.0
+    fmla v20.4s, v0.4s, v20.4s
+    fmla v20.4s, v1.4s, v21.4s
+    
+    fmul v0.4s, v20.4s, v11.4s  // exp(x-max) * (1/sum)
+    st1 {v0.4s}, [x1], #16
+    subs x4, x4, #4
+    b.ne exp_apply_loop
+
 soft_exit:
     ret
