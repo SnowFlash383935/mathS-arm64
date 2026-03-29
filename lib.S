@@ -314,72 +314,71 @@ SYM(vector_gelu):
 
 
 // void vector_softmax(float* in, float* out, int n)
-// x0 - in, x1 - out, x2 - n
+// x0 - in, x1 - out, w2 - n (используем w2 для 32-бит)
 SYM(vector_softmax):
-    cbz x2, soft_exit
-    mov x3, x0          // Копия указателя для поиска MAX
-    mov x4, x2          // Копия n для счетчика
+    cbz w2, soft_exit
+    mov x3, x0          // Копия для поиска MAX
+    mov w4, w2          // Копия n для счетчика
     
-    // --- 1. Поиск МАКСИМУМА (для стабильности) ---
-    fmov s10, #-10000.0 // Инициализируем очень маленьким числом
-    dup v10.4s, v10.s[0]
+    // --- 1. Поиск МАКСИМУМА ---
+    // Загружаем -10000.0 через обычный регистр
+    mov w5, #0x461c; movk w5, #0xc61c, lsl #16 // Это примерно -10000.0
+    fmov s10, w5
+    dup v10.4s, v10.s[0] // Clang съест v10.s[0] если v10 определен как вектор
+
 find_max_loop:
     ld1 {v0.4s}, [x3], #16
     fmax v10.4s, v10.4s, v0.4s
-    subs x4, x4, #4
+    subs w4, w4, #4
     b.ne find_max_loop
-    fmaxv s10, v10.4s    // Финальный максимум в s10
+    fmaxv s10, v10.4s    // s10 = глобальный max
 
     // --- 2. EXP и SUM ---
-    mov x3, x0          // Опять в начало
-    mov x4, x2          // Опять n
-    fmov s11, #0.0      // Тут будет сумма экспонент
-    dup v10.4s, s10.s[0] // В v10 теперь везде MAX
+    mov x3, x0
+    mov w4, w2
+    fmov s11, #0.0       // Сумматор
+    dup v10.4s, v10.s[0] // Размножаем max по всему вектору
     
-    // Константы для exp(x) ≈ (1 + x/256)^256 (быстрая аппроксимация)
-    // Для теста используем простейший ряд: e^x ≈ 1 + x + x^2/2
-    fmov v20.4s, #1.0
-    fmov v21.4s, #0.5
+    fmov v20.4s, #1.0    // База для экспоненты (1.0)
+    fmov v21.4s, #0.5    // Коэффициент 0.5 (для x^2/2)
 
 exp_sum_loop:
     ld1 {v0.4s}, [x3], #16
-    fsub v0.4s, v0.4s, v10.4s  // x - max
+    fsub v0.4s, v0.4s, v10.4s  // z = x - max
     
-    // Аппроксимация: 1 + x + 0.5*x^2
-    fmul v1.4s, v0.4s, v0.4s   // x^2
-    fmla v20.4s, v0.4s, v20.4s // 1 + x (используем v20 как базу 1.0)
-    fmla v20.4s, v1.4s, v21.4s // (1 + x) + 0.5*x^2
+    // e^z ≈ 1 + z + 0.5*z^2
+    fmul v1.4s, v0.4s, v0.4s   // z^2
+    fmov v2.4s, #1.0           // Сбрасываем временный регистр в 1.0
+    fmla v2.4s, v0.4s, v20.4s  // 1 + z
+    fmla v2.4s, v1.4s, v21.4s  // (1 + z) + 0.5*z^2
     
-    // Суммируем результат
-    faddp v2.4s, v20.4s, v20.4s
-    faddp v2.4s, v2.4s, v2.4s
-    fadd s11, s11, s2.s[0]
+    // Горизонтальное сложение элементов v2 в s11
+    faddp v3.4s, v2.4s, v2.4s
+    faddp v3.4s, v3.4s, v3.4s
+    fadd s11, s11, s3.s[0]     // Правильный синтаксис для сложения скаляра
     
-    // Сбрасываем v20 в 1.0 для следующей итерации
-    fmov v20.4s, #1.0
-    
-    subs x4, x4, #4
+    subs w4, w4, #4
     b.ne exp_sum_loop
 
-    // --- 3. NORMALIZATION (out = exp / sum) ---
-    fdiv s11, s7, s11           // Ошибка? Нет, лучше inv_sum = 1.0 / sum
+    // --- 3. NORMALIZATION ---
     fmov s12, #1.0
-    fdiv s11, s12, s11          // s11 = 1.0 / sum_exps
-    dup v11.4s, s11.s[0]
+    fdiv s11, s12, s11         // s11 = 1.0 / sum
+    dup v11.4s, v11.s[0]       // Размножаем inv_sum
     
-    mov x4, x2
+    mov w4, w2
 exp_apply_loop:
     ld1 {v0.4s}, [x0], #16
-    fsub v0.4s, v0.4s, v10.4s
-    // Снова считаем exp (можно оптимизировать, сохранив промежуточные данные)
-    fmul v1.4s, v0.4s, v0.4s
-    fmov v20.4s, #1.0
-    fmla v20.4s, v0.4s, v20.4s
-    fmla v20.4s, v1.4s, v21.4s
+    fsub v0.4s, v0.4s, v10.4s  // z = x - max
     
-    fmul v0.4s, v20.4s, v11.4s  // exp(x-max) * (1/sum)
+    // Снова считаем ту же аппроксимацию e^z
+    fmul v1.4s, v0.4s, v0.4s
+    fmov v2.4s, #1.0
+    fmla v2.4s, v0.4s, v20.4s
+    fmla v2.4s, v1.4s, v21.4s
+    
+    fmul v0.4s, v2.4s, v11.4s  // exp(z) * (1/sum)
     st1 {v0.4s}, [x1], #16
-    subs x4, x4, #4
+    subs w4, w4, #4
     b.ne exp_apply_loop
 
 soft_exit:
