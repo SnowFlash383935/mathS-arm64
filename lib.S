@@ -322,7 +322,7 @@ SYM(vector_softmax):
     // --- 1. Поиск МАКСИМУМА ---
     mov w5, #0x461c; movk w5, #0xc61c, lsl #16 // -10000.0
     fmov s10, w5
-    dup v10.4s, s10
+    dup v10.4s, v10.s[0]
 find_max_loop:
     ld1 {v0.4s}, [x3], #16
     fmax v10.4s, v10.4s, v0.4s
@@ -334,7 +334,7 @@ find_max_loop:
     mov x3, x0
     mov w4, w2
     fmov s11, #0.0       
-    dup v10.4s, s10
+    dup v10.4s, v10.s[0]
 
     // Константы Паде (1680, 840, 180, 20)
     mov w5, #1680; scvtf s16, w5; dup v16.4s, s16
@@ -379,7 +379,7 @@ exp_sum_loop:
     // --- 3. NORMALIZATION ---
     fmov s12, #1.0
     fdiv s11, s12, s11         
-    dup v11.4s, s11
+    dup v11.4s, v11.s[0]
     
     mov w4, w2
 exp_apply_loop:
