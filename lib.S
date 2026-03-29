@@ -313,13 +313,13 @@ SYM(vector_gelu):
     ret
 
 
-// void vector_softmax(float* in, float* out, int n)
+// --- Высокоточный SoftMax (FIXED) ---
 SYM(vector_softmax):
     cbz w2, soft_exit
     mov x3, x0          
     mov w4, w2          
     
-    // --- 1. Поиск МАКСИМУМА ---
+    // 1. Находим MAX
     mov w5, #0x461c; movk w5, #0xc61c, lsl #16 // -10000.0
     fmov s10, w5
     dup v10.4s, v10.s[0]
@@ -329,71 +329,66 @@ find_max_loop:
     subs w4, w4, #4
     b.ne find_max_loop
     fmaxv s10, v10.4s    
+    dup v10.4s, v10.s[0] // v10 = [MAX, MAX, MAX, MAX]
 
-    // --- 2. EXP и SUM (Pade Approximation) ---
+    // 2. EXP и SUM
     mov x3, x0
     mov w4, w2
-    fmov s11, #0.0       
-    dup v10.4s, v10.s[0]
-
-    // Константы Паде (1680, 840, 180, 20)
-    mov w5, #1680; scvtf s16, w5; dup v16.4s, s16
-    mov w5, #840;  scvtf s17, w5; dup v17.4s, s17
-    mov w5, #180;  scvtf s18, w5; dup v18.4s, s18
-    mov w5, #20;   scvtf s19, w5; dup v19.4s, s19
+    fmov s11, #0.0       // Сумматор exps
+    
+    // Константы
+    mov w5, #1680; scvtf s16, w5; dup v16.4s, v16.s[0]
+    mov w5, #840;  scvtf s17, w5; dup v17.4s, v17.s[0]
+    mov w5, #180;  scvtf s18, w5; dup v18.4s, v18.s[0]
+    mov w5, #20;   scvtf s19, w5; dup v19.4s, v19.s[0]
 
 exp_sum_loop:
     ld1 {v0.4s}, [x3], #16
-    fsub v0.4s, v0.4s, v10.4s  // x = z
+    fsub v0.4s, v10.4s, v0.4s  // v0 = z = (max - x). Теперь z >= 0!
     
-    // Считаем числитель (N) и знаменатель (D)
-    // N = 1680 + x*(840 + x*(180 + x*20))
-    // D = 1680 - x*(840 - x*(180 - x*20))
+    // Считаем Знаменатель D (все плюсы): 1680 + z*(840 + z*(180 + z*20))
+    fmul v2.4s, v0.4s, v19.4s   // z*20
+    fadd v2.4s, v2.4s, v18.4s   // 180 + z*20
+    fmul v2.4s, v2.4s, v0.4s   // z*(...)
+    fadd v2.4s, v2.4s, v17.4s   // 840 + z*(...)
+    fmul v2.4s, v2.4s, v0.4s   // z*(...)
+    fadd v2.4s, v2.4s, v16.4s   // D = 1680 + ...
+
+    // Считаем Числитель N (чередуем): 1680 - z*(840 - z*(180 - z*20))
+    fmul v1.4s, v0.4s, v19.4s   // z*20
+    fsub v1.4s, v18.4s, v1.4s   // 180 - z*20
+    fmul v1.4s, v1.4s, v0.4s   // z*(...)
+    fsub v1.4s, v17.4s, v1.4s   // 840 - z*(...)
+    fmul v1.4s, v1.4s, v0.4s   // z*(...)
+    fsub v1.4s, v16.4s, v1.4s   // N = 1680 - ...
     
-    // N
-    fmul v1.4s, v0.4s, v19.4s   // x*20
-    fadd v1.4s, v1.4s, v18.4s   // 180 + x*20
-    fmul v1.4s, v1.4s, v0.4s   // x*(...)
-    fadd v1.4s, v1.4s, v17.4s   // 840 + x*(...)
-    fmul v1.4s, v1.4s, v0.4s   // x*(...)
-    fadd v1.4s, v1.4s, v16.4s   // 1680 + x*(...) [Числитель]
+    fdiv v1.4s, v1.4s, v2.4s    // v1 = exp(-z) = N/D
     
-    // D (используем fsub вместо fadd)
-    fmul v2.4s, v0.4s, v19.4s   // x*20
-    fsub v2.4s, v18.4s, v2.4s   // 180 - x*20
-    fmul v2.4s, v2.4s, v0.4s   // x*(...)
-    fsub v2.4s, v17.4s, v2.4s   // 840 - x*(...)
-    fmul v2.4s, v2.4s, v0.4s   // x*(...)
-    fadd v2.4s, v2.4s, v16.4s   // 1680 + x*(...) [Знаменатель]
-    
-    fdiv v1.4s, v1.4s, v2.4s    // exp(x) ≈ N / D
-    
-    // Суммируем
-    faddp v2.4s, v1.4s, v1.4s
-    faddp v2.4s, v2.4s, v2.4s
-    fadd s11, s11, s2
+    faddp v3.4s, v1.4s, v1.4s
+    faddp v3.4s, v3.4s, v3.4s
+    fadd s11, s11, s3           // Суммируем в s11
     
     subs w4, w4, #4
     b.ne exp_sum_loop
 
-    // --- 3. NORMALIZATION ---
+    // 3. NORMALIZATION
     fmov s12, #1.0
-    fdiv s11, s12, s11         
+    fdiv s11, s12, s11          // s11 = 1.0 / sum
     dup v11.4s, v11.s[0]
     
     mov w4, w2
 exp_apply_loop:
     ld1 {v0.4s}, [x0], #16
-    fsub v0.4s, v0.4s, v10.4s
+    fsub v0.4s, v10.4s, v0.4s   // z = max - x
     
-    // Повторяем Паде (N/D)
-    fmul v1.4s, v0.4s, v19.4s; fadd v1.4s, v1.4s, v18.4s
-    fmul v1.4s, v1.4s, v0.4s; fadd v1.4s, v1.4s, v17.4s
-    fmul v1.4s, v1.4s, v0.4s; fadd v1.4s, v1.4s, v16.4s
-    
-    fmul v2.4s, v0.4s, v19.4s; fsub v2.4s, v18.4s, v2.4s
-    fmul v2.4s, v2.4s, v0.4s; fsub v2.4s, v17.4s, v2.4s
+    // Повторяем расчет N/D
+    fmul v2.4s, v0.4s, v19.4s; fadd v2.4s, v2.4s, v18.4s
+    fmul v2.4s, v2.4s, v0.4s; fadd v2.4s, v2.4s, v17.4s
     fmul v2.4s, v2.4s, v0.4s; fadd v2.4s, v2.4s, v16.4s
+    
+    fmul v1.4s, v0.4s, v19.4s; fsub v1.4s, v18.4s, v1.4s
+    fmul v1.4s, v1.4s, v0.4s; fsub v1.4s, v17.4s, v1.4s
+    fmul v1.4s, v1.4s, v0.4s; fsub v1.4s, v16.4s, v1.4s
     
     fdiv v1.4s, v1.4s, v2.4s
     fmul v0.4s, v1.4s, v11.4s  
@@ -403,3 +398,4 @@ exp_apply_loop:
 
 soft_exit:
     ret
+
